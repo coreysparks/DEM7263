@@ -203,7 +203,7 @@ ggplot(bexar)+
   geom_sf(data=bb, fill=NA , color="red")
 
 ```
-```{r}
+```{r, eval = FALSE}
 library(mapview)
 
 mapview(txtractt[txtractt$COUNTYFP=="029",])+mapview(bb)
@@ -231,7 +231,7 @@ ggplot(data=bexar)+
 
 It is hard to see, because blocks are so small, but all of the blue lines are contained within the red line (ZIP code 78249), meaning that the boundary of ZIP code 78249 is also composed of lines that make up some of the blocks within Bexar county, TX.
 
-```{r}
+```{r, eval = FALSE}
 library(mapview)
 
 mapview(txbl[txbl$COUNTYFP=="029",])+mapview(bb, color="blue")
@@ -243,23 +243,23 @@ mapview(txbl[txbl$COUNTYFP=="029",])+mapview(bb, color="blue")
 ### Coding Practice 
 In this practice example you will use R to extract geographies for the state of New Jersey.
 
-```{r getpa maps, echo=TRUE, message=FALSE, warning=FALSE, fig.height=7, fig.width=9,results='hide'}
+```{r getpa maps, echo=TRUE, message=FALSE, warning=FALSE, fig.height=7, fig.width=9,results='hide', eval = FALSE}
 library(tigris)
 njst<-states(cb = FALSE)
 njst<-njst[njst$STUSPS=="NJ",] #select NJ from all states
 ```
 
-```{r,results='hide'}
+```{r,results='hide', eval = FALSE}
 njcnty<-counties(state="NJ" , cb=T,refresh=T) #all counties in NJ
 plot(njcnty[, "COUNTYFP"], main="New Jersey County Geographies")
 ```
 
-```{r,results='hide'}
+```{r,results='hide', eval = FALSE}
 njtractt<-tracts(state = "NJ",cb=T, refresh=T) #all census tracts in NJ
 plot(njtractt[,"COUNTYFP"], main="New Jersey Census Tract Geographies")
 ```
 
-```{r,results='hide'}
+```{r,results='hide', eval = FALSE}
 njbg<-block_groups(state="NJ",cb=T, refresh=T) #all block groups in NJ
 plot(njbg[, "COUNTYFP"], main="New Jersey Census Block-Group Geographies")
 ```
