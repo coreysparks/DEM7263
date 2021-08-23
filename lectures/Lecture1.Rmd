@@ -116,14 +116,14 @@ In this part of the lesson, we will examine several common levels of U.S. Census
 ![Hierarchy of Census Geography](../images/census_diagram.PNG)
 The diagram also illustrates that not all geographies are nested within each other. For example, tracts *are not* nested within places, but blocks *are* nested within places. Likewise, ZIP codes and school districts only have blocks nested within them. 
 
-On the next few pages, we will examine examples of nested and unnested geographic entities in the state of Pennsylvania. For now, just be aware that, depending on the type of analysis you are trying to do, your options for data availability may be limited, based on the geographic level you are using. 
+On the next few pages, we will examine examples of nested and unnested geographic entities in the state of Texas. For now, just be aware that, depending on the type of analysis you are trying to do, your options for data availability may be limited, based on the geographic level you are using. 
 
 \newpage
 ## Using R to extract Census geographic data 
-Below is some R code that loads the `tigris` package [@Walker2018] and uses it to download several layers of geographic data, corresponding to the levels of states, ZIP codes, counties, Census tracts, Census designated places and Census blocks. This code is for Pennsylvania, but it can be modified to obtain the data for other states. 
+Below is some R code that loads the `tigris` package [@Walker2018] and uses it to download several layers of geographic data, corresponding to the levels of states, ZIP codes, counties, Census tracts, Census designated places and Census blocks. This code is for Texas, but it can be modified to obtain the data for other states. 
 
 **Code description**
-In this code, we first use the `states()` function to extract all state level geographies in the US, and subset to just have the Pennsylvania state polygon. The, we download ZIP codes using `zctas()`, counties using `counties()`, census tracts using `tracts()` and finally census blocks using `blocks()`. By changing the state, county and year arguments, we can get the various geographies for different levels of nesting. You need to know the county FIPS codes if you want specific county data. 
+In this code, we first use the `states()` function to extract all state level geographies in the US, and subset to just have the Texas state polygon. The, we download ZIP codes using `zctas()`, counties using `counties()`, census tracts using `tracts()` and finally census blocks using `blocks()`. By changing the state, county and year arguments, we can get the various geographies for different levels of nesting. You need to know the county FIPS codes if you want specific county data. 
 
 You can copy this code into RStudio as you go through this example to see it in real time. In order to run these codes on your own computer, you need to install some packages first. The packages you need to install are: `tigris, spdep, sp, ggplot2`.
 
@@ -131,29 +131,29 @@ You can copy this code into RStudio as you go through this example to see it in 
 library(tigris)
 
 #All states
-past<-states(cb =T) 
+txst<-states(cb =T) 
 
-#Just Pennsyvania
-past<-past[past$STUSPS=="PA",]
+#Just Texas
+txst<-txst[txst$STUSPS=="TX",]
 
-#All ZIP codes in Pennsylvania
-pazip<-zctas(state = "PA", year = "2010")
+#All ZIP codes in Texas
+txzip<-zctas(state = "TX", year = "2010")
 
-#All Counties in Pennsylvania
-pacnty<-counties(state="PA" , refresh=T, cb = T)
+#All Counties in Texas
+txcnty<-counties(state="TX" , refresh=T, cb = T)
 
-#Centre County PA
-centre<-pacnty[pacnty$COUNTYFP=="027",]
+#Bexar County TX
+bexar<-txcnty[txcnty$COUNTYFP=="029",]
 
 
-#All Census tracts in Pennsylvania
-patractt<-tracts(state = "PA", refresh=T, cb = T)
+#All Census tracts in Texas
+txtractt<-tracts(state = "TX", refresh=T, cb = T)
 
-#Centre county tracts
-sc_tract<-patractt[patractt$COUNTYFP=="027",]
+#Bexar county tracts
+sc_tract<-txtractt[txtractt$COUNTYFP=="029",]
 
-#All blocks in Center County, Pennsylvania
-pabl<-blocks(state = "PA", county = "027", year = "2010")
+#All blocks in Bexar County, Texas
+txbl<-blocks(state = "TX", county = "029", year = "2010")
 
 ```
 
@@ -162,24 +162,24 @@ pabl<-blocks(state = "PA", county = "027", year = "2010")
 
 Now, the nesting of geographies can be seen. 
 
-Let's first visualize counties within the state of Pennsylvania. *See the image below.* It is clear that all counties are nested within the state boundary.
+Let's first visualize counties within the state of Texas. *See the image below.* It is clear that all counties are nested within the state boundary.
 
-Note that `lwd=6` makes a thicker line for plotting, and `col="red"` draws the lines as red, versus black. Also, the data are downloaded as [simple features](https://en.wikipedia.org/wiki/Simple_Features), but we can convert them lines for plotting using `as(past, "SpatialLines")`.
+Note that `lwd=6` makes a thicker line for plotting, and `col="red"` draws the lines as red, versus black. Also, the data are downloaded as [simple features](https://en.wikipedia.org/wiki/Simple_Features), but we can convert them lines for plotting using `as(txst, "SpatialLines")`.
 
 ```{r}
 library(sf)
 library(ggplot2)
 
-ggplot(past)+
+ggplot(txst)+
   geom_sf(col = "blue", lwd = 2)+
-  geom_sf(data=pacnty, col ="#1f78b4" )
+  geom_sf(data=txcnty, col ="#1f78b4" )
 
 ```
 
-We can also see that all census tracts are nested within counties. Let's visualize tracts within Centre county, PA. *See the image below.*:
+We can also see that all census tracts are nested within counties. Let's visualize tracts within Bexar county, TX. *See the image below.*:
 
 ```{r}
-ggplot(centre)+
+ggplot(bexar)+
   geom_sf(col = "blue", lwd = 2)+
   geom_sf(data=sc_tract, col ="#1f78b4" )
 
@@ -191,35 +191,51 @@ ggplot(centre)+
 
 However, not all geographic levels overlap. 
 
-Let's visualize ZIP codes and Census tracts in downtown State College, Pennsylvania. *See the image below.* The tracts are green lines, and the ZIP codes are blue lines. We see that these two areas do not overlap at all, so tracts are not nested within ZIP codes.: 
+Let's visualize ZIP codes and Census tracts in downtown State College, Texas. *See the image below.* The tracts are green lines, and the ZIP codes are blue lines. We see that these two areas do not overlap at all, so tracts are not nested within ZIP codes.: 
 
 ```{r}
-#get the geographic extent of the 16801 zip code
-bb<-pazip[pazip$ZCTA5CE10=="16801",]
+#get the geographic extent of the 78249 zip code
+bb<-txzip[txzip$ZCTA5CE10=="78249",]
 
-ggplot(centre)+
+ggplot(bexar)+
   geom_sf(col = "blue", lwd = 2)+
-  geom_sf(data=patractt[patractt$COUNTYFP=="027",] )+
+  geom_sf(data=txtractt[txtractt$COUNTYFP=="029",] )+
   geom_sf(data=bb, fill=NA , color="red")
-  
+
+```
+```{r}
+library(mapview)
+
+mapview(txtractt[txtractt$COUNTYFP=="029",])+mapview(bb)
 ```
 
 However, Census blocks are nested within ZIP codes. Let's now visualize ZIP codes and Census blocks in downtown State College. *See the image below.*
 
-It is hard to see, because blocks are so small, but all of the blue lines are contained within the red line (ZIP code 16801), meaning that the boundary of ZIP code 16801 is also composed of lines that make up some of the blocks within Centre county, PA.:
+It is hard to see, because blocks are so small, but all of the blue lines are contained within the red line (ZIP code 78249), meaning that the boundary of ZIP code 78249 is also composed of lines that make up some of the blocks within Bexar county, TX.:
 
 ```{r}
 
-ggplot(data=centre)+
+ggplot(data=bexar)+
   geom_sf(col="red")+
-   geom_sf(data=pabl[pabl$COUNTYFP=="027",], fill=NA, color="blue")+
-  geom_sf(data=pazip[pazip$ZCTA5CE10=="16801",], fill=NA, color="black", lwd=3)
+   geom_sf(data=txbl[txbl$COUNTYFP=="029",],
+           fill=NA,
+           color="blue")+
+  geom_sf(data=txzip[txzip$ZCTA5CE10=="78249",],
+          fill=NA,
+          color="black",
+          lwd=3)
  
 
 ```
 
-It is hard to see, because blocks are so small, but all of the blue lines are contained within the red line (ZIP code 16801), meaning that the boundary of ZIP code 16801 is also composed of lines that make up some of the blocks within Center county, PA.
 
+It is hard to see, because blocks are so small, but all of the blue lines are contained within the red line (ZIP code 78249), meaning that the boundary of ZIP code 78249 is also composed of lines that make up some of the blocks within Bexar county, TX.
+
+```{r}
+library(mapview)
+
+mapview(txbl[txbl$COUNTYFP=="029",])+mapview(bb, color="blue")
+```
 
 # References
 
@@ -231,12 +247,21 @@ In this practice example you will use R to extract geographies for the state of 
 library(tigris)
 njst<-states(cb = FALSE)
 njst<-njst[njst$STUSPS=="NJ",] #select NJ from all states
+```
+
+```{r,results='hide'}
 njcnty<-counties(state="NJ" , cb=T,refresh=T) #all counties in NJ
-plot(njcnty, main="New Jersey County Geographies")
+plot(njcnty[, "COUNTYFP"], main="New Jersey County Geographies")
+```
+
+```{r,results='hide'}
 njtractt<-tracts(state = "NJ",cb=T, refresh=T) #all census tracts in NJ
-plot(njtractt, main="New Jersey Census Tract Geographies")
+plot(njtractt[,"COUNTYFP"], main="New Jersey Census Tract Geographies")
+```
+
+```{r,results='hide'}
 njbg<-block_groups(state="NJ",cb=T, refresh=T) #all block groups in NJ
-plot(njbg, main="New Jersey Census Block-Group Geographies")
+plot(njbg[, "COUNTYFP"], main="New Jersey Census Block-Group Geographies")
 ```
 
 ## Summary  
