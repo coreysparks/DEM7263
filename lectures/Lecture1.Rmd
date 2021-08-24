@@ -209,7 +209,7 @@ library(mapview)
 mapview(txtractt[txtractt$COUNTYFP=="029",])+mapview(bb)
 ```
 
-However, Census blocks are nested within ZIP codes. Let's now visualize ZIP codes and Census blocks in downtown State College. *See the image below.*
+However, Census blocks are nested within ZIP codes. Let's now visualize ZIP codes and Census blocks in downtown San Antonio. *See the image below.*
 
 It is hard to see, because blocks are so small, but all of the blue lines are contained within the red line (ZIP code 78249), meaning that the boundary of ZIP code 78249 is also composed of lines that make up some of the blocks within Bexar county, TX.:
 
