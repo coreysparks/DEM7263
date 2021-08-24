@@ -191,7 +191,7 @@ ggplot(bexar)+
 
 However, not all geographic levels overlap. 
 
-Let's visualize ZIP codes and Census tracts in downtown State College, Texas. *See the image below.* The tracts are green lines, and the ZIP codes are blue lines. We see that these two areas do not overlap at all, so tracts are not nested within ZIP codes.: 
+Let's visualize ZIP codes and Census tracts in downtown San Antonio, Texas. *See the image below.* The tracts are green lines, and the ZIP codes are blue lines. We see that these two areas do not overlap at all, so tracts are not nested within ZIP codes.: 
 
 ```{r}
 #get the geographic extent of the 78249 zip code
