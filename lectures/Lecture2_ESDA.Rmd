@@ -71,7 +71,7 @@ You can also think of the smooth as a central parameter of a distribution, the m
 
 The rough is the difference between our actual data, and the smooth.  This can be measured as the deviation of each point from the mean.
 
-In the figures below, the example of a linear regresion model is used. Figure **A** shows the data itself, figure **B** shows the data, with the addition of the smooth component, as given by the regression line. Finally figure **C** shows the residuals from the model, shown as the light bars connecting each data point to the regression line, as the __rough__ part of the data, which is not explained by the smooth part.
+In the figures below, the example of a linear regression model is used. Figure **A** shows the data itself, figure **B** shows the data, with the addition of the smooth component, as given by the regression line. Finally figure **C** shows the residuals from the model, shown as the light bars connecting each data point to the regression line, as the __rough__ part of the data, which is not explained by the smooth part.
 
 ```{r, include=FALSE}
 b0<-10; b1=2; x=rnorm(n=75, mean=10, sd=10)
@@ -771,4 +771,31 @@ dat%>%
 
 Which show similar interpretations as the Moran statistic.
 
+### How to get this data from tidycensus
+
+### Load Tidycensus
+`get_acs()` gets the ACS estimates.
+Refer to the variables here [API variable list](https://api.census.gov/data/2018/acs/acs5/profile/variables.html) for table numbers
+
+`output="wide"` makes each table a column
+`geometry=TRUE` downloads the shapefile as well as the data.
+
+```{r, results = 'hide'}
+library(tidycensus)
+
+paincome <- get_acs(geography = "tract",
+                    year = 2018,
+                    state = "PA", 
+                    county = 101, 
+                    variables = c("DP03_0062E"),
+                    output ="wide", 
+                    geometry = TRUE)%>%
+  rename(mednncm =DP03_0062E)
+
+paincome%>%
+  ggplot()+
+  geom_sf(aes(fill = mednncm))+
+  scale_fill_viridis_c()
+
+```
 
