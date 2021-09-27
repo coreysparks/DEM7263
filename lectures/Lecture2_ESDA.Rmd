@@ -74,8 +74,10 @@ The rough is the difference between our actual data, and the smooth.  This can b
 In the figures below, the example of a linear regression model is used. Figure **A** shows the data itself, figure **B** shows the data, with the addition of the smooth component, as given by the regression line. Finally figure **C** shows the residuals from the model, shown as the light bars connecting each data point to the regression line, as the __rough__ part of the data, which is not explained by the smooth part.
 
 ```{r, include=FALSE}
-b0<-10; b1=2; x=rnorm(n=75, mean=10, sd=10)
-y<-rnorm(n=75, mean = b0+b1*x, sd=25)
+b0<-10; b1=2; x=rnorm(n=76, mean=10, sd=10)
+y<-rnorm(n=76, mean = b0+b1*x, sd=25)
+x[76]<- 250
+y[76]<-1000
 d<-data.frame(y=y, x=x)
 par(mfrow=c(1, 3))
 fit<-lm(y~x, d)
@@ -365,7 +367,7 @@ $$z_{lag}=\begin{bmatrix}
 In R, we can calculate the spatially lagged value of $Z(s)$. See the code below.
 
 ```{r}
-z<-c(1,2,3,4)
+z<-c(-10,2,3,8)
 w<-matrix(c(0,.5,.5,0,.5,0,0,.5,.5,0,0,.5,0,.5,.5,0), nrow = 4, byrow = T)
 z
 ```
@@ -440,7 +442,7 @@ And here we show the Moran scatterplot:
 
 ```{r}
 #Moran Scatter plot
-moran.plot(as.numeric(scale(dat$ppersonspo)),
+moran.plot(as.numeric(dat$ppersonspo),
            listw=salw,
            xlab="Poverty Rate",
            ylab="Lagged Poverty Rate",
@@ -525,32 +527,25 @@ pa%>%
 ## Local Moran Cluster Map
 
 ```{r}
+pa.dist<- dnearneigh(coordinates(as(pa, "Spatial")), d1= 0, d2 = 7500)
+nb2<-nb2listw(pa.dist)
 pa.nbs<-poly2nb(pa, queen = T)
 pa.wts<-nb2listw(neighbours = pa.nbs, style = "W")
 
-locali<-localmoran(pa$mednncm, listw = pa.wts, alternative = "two.sided" )
+locali<-localmoran(pa$mednncm, listw = pa.wts)
+
 pa$locali<-locali[,1]
 pa$localp<-locali[,5]
 
 pa$sinc<-scale(pa$mednncm)
 pa$lag_inc<-lag.listw(var=pa$sinc, x = pa.wts)
+
 pa$quad_sig <- NA
 pa$quad_sig[(pa$sinc >= 0 & pa$lag_inc >= 0) & (pa$localp <= 0.05)] <- "H-H" #high high
 pa$quad_sig[(pa$sinc <= 0 & pa$lag_inc <= 0) & (pa$localp <= 0.05)] <- "L-L" #low low
 pa$quad_sig[(pa$sinc >= 0 & pa$lag_inc <= 0) & (pa$localp <= 0.05)] <- "H-L" #high low
 pa$quad_sig[(pa$sinc <= 0 & pa$lag_inc >= 0) & (pa$localp <= 0.05)] <- "L-H" #low high
 
-#WE ASSIGN A # Set the breaks for the thematic map classes
-breaks <- seq(1, 5, 1)
-
-# Set the corresponding labels for the thematic map classes
-labels <- c("High-High", "Low-Low", "High-Low", "Low-High", "Not Clustered")
-
-# see ?findInterval - This is necessary for making a map
-np <- findInterval(pa$quad_sig, breaks)
-
-# Assign colors to each map class
-colors <- c("red", "blue", "lightpink", "skyblue2", "white")
 
 ```
 
