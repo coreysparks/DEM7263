@@ -1,0 +1,374 @@
+---
+title: "DEM 7263 - Spatially Autoregressive Models part 2"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+---
+
+```{r setup, cache = F}
+knitr::opts_chunk$set(error = TRUE)
+```
+```{r, warning=FALSE, message=FALSE}
+library(nortest)
+library(car)
+library(lmtest)
+library(classInt)
+library(sandwich)
+library(tidyverse)
+library(spdep)
+library(spatialreg)
+library(sf)
+```
+
+# Spatial Regression Models
+This lecture builds off the previous lecture on the Spatially Autoregressive Model (SAR) with either a lag or error specification. 
+
+The lag model is written:
+$Y= \rho  W Y + X '\beta +e$
+
+Where Y is the dependent variable, X is the matrix of independent variables, $\beta$ is the vector of regression parameters to be estimated from the data, $\rho$ is the *autoregressive* coefficient, which tells us how strong the resemblance is, on average, between $Y_i$ and it's neighbors. The matrix  **W** is the spatial weight matrix, describing the spatial network structure of the observations, like we described in the ESDA lecture.
+
+In the lag model, we are specifying the spatial component on the dependent variable.  This leads to a spatial filtering of the variable, where they are averaged over the surrounding neighborhood defined in **W**, called the spatially lagged variable. In R we use the spdep package, and the `lagsarlm()` function	to fit this model.
+
+The error model says that the autocorrelation is not in the outcome itself, but instead, any autocorrelation is attributable to there being missing *spatial covariates* in the data. If these spatially patterned covariates *could* be measures, then the autocorrelation would be 0. This model is written:
+
+$Y=   X' \beta +e$
+
+$e=\lambda W e + v$
+
+This model, in effect, controls for the nuisance of correlated errors in the data that are attributable to an inherently spatial process, or to spatial autocorrelation in the measurement errors of the measured and possibly unmeasured variables in the model.  This model is estimated in R using `errorsarlm()` in the `spdep` library.
+
+## Examination of Model Specification
+To some degree, both of the SAR specifications allow us to model spatial dependence in the data.  The primary difference between them is where we model said dependence. 
+
+The lag model says that the dependence affects the dependent variable only, we can liken this to a diffusion scenario, where your neighbors have a diffusive effect on you. 
+
+The error model says that dependence affects the residuals only.  We can liken this to the missing spatially dependent covariate situation, where, if only we could measure another really important spatially associated predictor, we could account for the spatial dependence.  But alas, we cannot, and we instead model dependence in our errors.
+
+These are inherently two completely different ways to think about specifying a model, and we should really make our decision based upon how we think our process of interest operates.
+
+That being said, this way of thinking isnt necessarily popular among practitioners.  Most practitioners want the *best fitting model*,'nuff said.   So methods have been developed that test for alternate model specifications, to see which kind of model best summarizes the observed variation in the dependent variable and the spatial dependence. 
+
+## More exotic types of spatial dependence
+**Spatial Durbin Model**
+Another form of a spatial lag model is the **Spatial Durbin Model** (SDM). This model is an extension of the ordinary lag or error model that includes spatially lagged independent variables. If you remember, one issue that commonly occures with the lag model, is that we often have residual autocorrelation in the model. This autocorrelation could be attributable to a missing spatial covariate. We *can* get a kind of spatial covariate by lagging the predictor variables in the model using **W**. This model can be written:
+
+$Y= \rho  W Y + X '\beta + W X \theta + e$
+
+Where, the $\theta$ parameter vector are now the regression coefficients for the lagged predictor variables. We can also include the lagged predictors in an error model, which gives us the **Durbin Error Model** (DEM):
+
+$Y= X '\beta + W X \theta + e$
+
+$e=\lambda W e + v$
+
+Generally, the spatial Durbin model is preferred to the ordinary error model, because we can include the *unspecified spatial covariates* from the error model into the Durbin model via the lagged predictor variables.
+
+**Spatially Autoregressive Moving Average Model**
+Futher extensions of these models include dependence on both the outcome and the error process. Two models are described in [LeSage and Pace](https://books.google.com/books?id=EKiKXcgL-D4C&hl=en). The **Spatial Autocorrelation Model**, or SAC model and the **Spatially autoregressive moving average** model (SARMA model). 
+The SAC model is:
+
+$Y= \rho  W_1 Y + X '\beta + e$
+
+$e=\theta W_2 e + v$
+
+$Y= (I_n - \rho W_1)^{-1} X '\beta + (I_n - \rho W_1)^{-1} (I_n - \theta W_2)^{-1} e$
+
+Where, you can potentially have two different spatial weight matrices, $W_1$ and $W_2$. Here, the lagged error term is taken over all orders of neighbors, leading to a more *global* error process, while the SARMA model has form:
+
+$Y= \rho  W_1 Y + X '\beta + u$
+
+$u=(I_n - \theta W_2) e$
+
+$e \sim N(0, \sigma^2 I_n)$ 
+
+$Y= (I_n - \rho W_1)^{-1} X '\beta + (I_n - \rho W_1)^{-1} (I_n - \theta W_2) e$
+
+which gives a "locally" weighted moving average to the residuals, which will avereage the residuals only in the local neighborhood, instead of over all neighbor orders.
+
+Fitting these models in R can be done in the `spdep` library.
+
+```{r, fig.width=9, fig.height=8}
+spdat<-st_read("../data/PSP_Data_CLnad83.shp")
+
+#Create a k=2 nearest neighbor set
+us.nb5<-knearneigh(st_coordinates(st_centroid(spdat))[, 1:2], k=2, longlat = T)
+us.nb5<-knn2nb(us.nb5)
+us.wt2<-nb2listw(make.sym.nb(us.nb5), style="W")
+
+
+nbs<-poly2nb(spdat, queen = T)
+nbs
+us.lw<-nb2listw(make.sym.nb(nbs), zero.policy = T)
+```
+
+
+Next, we scale the outcomes and predictors:
+```{r}
+spdat$mortz<-scale(spdat$ARSMORT, center=T, scale=T)
+spdat$densz<-scale(spdat$PDENSITY, center=T, scale=T)
+spdat$rurz<-scale(spdat$PRURAL, center=T, scale=T)
+spdat$blacz<-scale(spdat$PBLACK, center=T, scale=T)
+spdat$hisz<-scale(spdat$PHISP, center=T, scale=T)
+spdat$femz<-scale(spdat$FEMHH, center=T, scale=T)
+spdat$unemz<-scale(spdat$UNEMP, center=T, scale=T)
+spdat$povz<-scale(spdat$PPERSONPO, center=T, scale=T)
+spdat$incz<-scale(spdat$MEDHHINC, center=T, scale=T)
+spdat$hvalz<-scale(spdat$MEDHVAL, center=T, scale=T)
+spdat$giniz<-scale(spdat$GINI001, center=T, scale=T)
+```
+
+Moran's I for the mortality rate:
+
+```{r}
+moran.test(spdat$mortz,
+           listw = us.lw ,
+           zero.policy = T)
+```
+
+
+## Models
+
+Now we show how to fit the various models described above. We start with OLS and move through the various other models.
+
+```{r}
+fit.ols<-lm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,data=spdat)
+summary(fit.ols)
+lm.morantest(fit.ols, listw=us.wt2)
+set.seed(1234)
+```
+
+
+
+### SAR - Lag model
+
+```{r}
+fit.lag<-lagsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
+                  spdat,
+                  listw=us.wt2,
+                  type="lag")
+summary(fit.lag, Nagelkerke=T)
+```
+
+
+### SAR - Error model
+
+```{r}
+fit.err<-errorsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
+                    spdat,
+                    listw=us.wt2,
+                    etype="error")
+summary(fit.err, Nagelkerke=T)
+
+```
+
+### Spatial Durbin Model
+
+```{r}
+
+fit.durb<-lagsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
+                   spdat,
+                   listw=us.wt2,
+                   type="mixed")
+summary(fit.durb, Nagelkerke=T)
+
+```
+
+### Spatial Durbin Error Model
+```{r}
+
+fit.errdurb<-errorsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
+                        spdat,
+                        listw=us.wt2,
+                        etype="emixed")
+summary(fit.errdurb, Nagelkerke=T)
+
+```
+
+
+### SAC Model
+```{r}
+fit.sac<-sacsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz, 
+                  spdat, 
+                  listw=us.wt2,
+                  type="sac")
+summary(fit.sac, Nagelkerke=T)
+
+```
+
+### SMA Model
+```{r}
+
+fit.sma<-spautolm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
+                  spdat,
+                  listw=us.wt2,
+                  family="SMA")
+summary(fit.sma)
+```
+
+
+
+##Using the Lagrange Multiplier Test (LMT)
+
+```{r}
+lm.LMtests(fit.ols, listw=us.wt2, test="all")
+```
+
+There is a `r round(100*((1305.8-1258.7)/1258.7), 2)`% difference the regular LM test between the error and lag models, but a `r round(100*((93.6-46.4)/46.4), 2)`% difference in the Robust LM tests.  In this case, I would say that either the lag model looks like the best one, using the Robust Lagrange multiplier test, or possibly the SARMA model, since it's test is `r round(100*((1352.3-1305.8 )/1305.8), 2)`% difference between it and the lag model. Unfortunately, there is no a robust test for SARMA model.
+
+Of course, the AIC is also your friend:
+
+```{r,fig.width=7, fig.height=6}
+AICs<-c(AIC(fit.ols),AIC(fit.lag), AIC(fit.err), AIC(fit.durb), AIC(fit.errdurb), AIC(fit.sac), AIC(fit.sma))
+plot(AICs, type="l", lwd=1.5, xaxt="n", xlab="")
+axis(1, at=1:7,labels=F) #6= number of models
+labels<-c("OLS", "Lag","Err", "Durbin","Err Durbin", "SAC", "SMA" )
+text(1:7, par("usr")[3]-.25, srt=45, adj=1, labels=labels, xpd=T)
+mtext(side=1, text="Model Specification", line=3)
+symbols(x= which.min(AICs), y=AICs[which.min(AICs)], circles=1, fg=2,lwd=2,add=T)
+```
+
+```{r}
+knitr::kable(data.frame(Models=labels, AIC=round(AICs, 2)))
+```
+
+Which shows that the Spatial Durbin model best fits the data, although the degree of difference between it an the SAC model is small. A likelihood ratio test could be used:
+
+```{r}
+anova(fit.sac, fit.durb)
+```
+
+Which indicates that the SAC model fits significantly better than the Durbin model. **SAC it is!!**
+
+
+## Interpreting effects in spatial lag models
+In **spatial lag models**, interpretation of the regression effects is complicated. Each observation will have a direct effect of its predictors, but each observation will also have in indirect effect of the information of its neighbors, although Spatial Error models do not have this issue.
+In OLS, the impact/effect of a predictor is straight forward:
+
+$$\frac {\delta y_i} {\delta x_{ik}} = \beta_k$$ 
+and
+
+$$\frac {\delta y_i} {\delta x_{jk}} = 0$$
+
+but when a model has a spatial lag of either the outcome or a predictor, this becomes more complicated, indeed:
+
+$$\frac {\delta y_i} {\delta x_{jk}}$$
+
+may not = 0,
+
+or 
+$$\frac {\delta y_i} {\delta x_{jk}} = S_r(W)$$ 
+, where 
+$$S_r(W) = (I_n - \rho W)^{-1} \beta_k$$
+
+This implies that a change in the ith regions predictor can affect the jth regions outcome
+
+ *  We have 2 situations:
+ 
+ *  $S_r(W)_{ii}$, or the direct impact of an observation's predictor on its own outcome, and:
+ 
+ *  $S_r(W)_{ij}$, or the _indirect impact_ of an observation's neighbor's predictor on its outcome.
+
+This leads to three quantities that we want to know:
+
+ *  _Average Direct Impact_, which is similar to a traditional interpretation
+ 
+ *  _Average Total impact_, which would be the total of direct and indirect impacts of a predictor on ones outcome
+ 
+ *  _Average Indirect impact_, which would be the average impact of ones neighbors on ones outcome
+
+These quantities can be found using the `impacts()` function in the `spdep` library. 
+We follow the example that converts the spatial weight matrix into a "sparse" matrix, and power it up using the `trW()` function. This follows the approximation methods described in Lesage and Pace, 2009. Here, we use Monte Carlo simulation to obtain simulated distributions of the various impacts. We are looking for the first part of the output and ...
+
+```{r}
+W <- as(us.wt2, "CsparseMatrix")
+trMC <- trW(W, type="MC")
+im<-impacts(fit.sac, tr=trMC, R=100)
+sums<-summary(im,  zstats=T)
+data.frame(sums$res)
+data.frame(sums$pzmat)
+```
+
+We see all variables have a significant *direct* effect, we also see that the rural, unemployment, home value, density and Gini index all have **significant direct impacts**. These also have significant **indirect impacts**
+
+We can likewise see the effects by order of neighbors, similar to what Yang et al[(2015)](http://onlinelibrary.wiley.com/doi/10.1002/psp.1809/abstract) do in their Table 4.
+
+Here, I do this up to 5th order neighbors.
+
+```{r}
+im2<-impacts(fit.sac, tr=trMC, R=100, Q=5)
+sums2<-summary(im2,  zstats=T, reportQ=T, short=T)
+sums2
+```
+
+So we see that, for instance, for the direct impact of %rural, -.117/-.127= `r round(100*(-0.116586556/-.127),2)`% of the effect is due to a county's own influence on itself, while (0 + -.0113 +0.002698620+-0.002815391)/-.127 = `r round(100*((0 + -.0113 +0.002698620+-0.002815391)/-.127),2)` % of the effect of %rural comes from other neighboring counties. This is confusing, but shows that the effects of a variable can come from two sources in the SAR models.
+
+
+
+
+## Another Topic - Missing data and spatial autocorrelation calculations
+It's common to see some polygons with missing data for the outcome, below I show how to deal with this. First I knock out some observations to mimic random missing data. 
+
+```{r}
+samp<-sample(1:dim(spdat@data)[1],size = 500, replace = F)
+spdat$newmort<-spdat$mortz
+spdat$newmort[samp]<-NA
+
+summary(spdat$mortz)
+summary(spdat$newmort)
+
+```
+
+This is what you see if you try to analyze this normally:
+```{r error=TRUE}
+moran.test(spdat$newmort,
+           listw = us.lw)
+```
+
+**FAIL**
+
+So, we can tell R to not use the missing values:
+```{r}
+moran.test(spdat$newmort,
+           listw = us.wt2,
+           na.action = na.omit,
+           zero.policy = T)
+```
+
+Which tells R to omit the missing values and allow for there to be empty neighbor sets `zero.policy=T`. Interestingly, this is also what you do if you have islands in the data which have no neighbors.
+
+### What do these models look like?
+
+```{r, fig.height=10, fig.width=8}
+library(tmap)
+
+f1<-tm_shape(spdat)+
+  tm_polygons("ARSTOT00",title="Mortality Rate",
+              border.col = NULL,
+              palette="Blues",
+              style="kmeans",
+              n=5,
+              legend.hist=T  )+
+  tm_format(format = "World", legend.outside=T)
+
+spdat$fitted_lag <- fitted(fit.durb) *sd(spdat$ARSTOT00) + mean(spdat$ARSTOT00)
+
+f2<-tm_shape(spdat)+
+  tm_polygons("fitted_lag",title="Estimated Mortality Rate",
+              border.col = NULL,
+              palette="Blues",
+              style="kmeans",
+              n=5,
+              legend.hist=T  )+
+  tm_format(format = "World", legend.outside=T)
+
+f2_all<-tmap_arrange(f1, f2, nrow = 2)
+f2_all
+```
+
