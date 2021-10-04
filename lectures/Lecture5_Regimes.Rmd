@@ -1,0 +1,448 @@
+---
+title: "DEM 7263 - Spatial Nonstationarity through Regime modeling"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+---
+
+# Lesson Overview
+
+This lesson will introduce the concept of spatial stationarity and the use of **_spatial regimes_** to model spatial non-stationarity in an analysis. Spatial stationarity or non-stationarity is a useful methodological alternative to formal spatial modeling, when you can effectively split the data being analyzed into sub-groups of observations, and conduct your analysis separately on those groups.  We will then discuss the use of **_Geographically Weighted Regression_** to model spatial non-stationarity in an analysis. Compared to the **_spatial regimes model_**, Geographically Weighted Regression, or GWR, allows us to view stationarity in a continuous fashion, versus stratifying the analysis in a discrete manner, as we did using spatial regimes.    
+
+
+### Readings
+
+When reading through these articles, consider the following questions:
+1) Why do the authors need to use spatial regimes in order to accomplish their research objective?
+
+2) How do the authors construct the spatial regimes, and why is this justified in these articles?
+
+
+Shoff, C., Yang, T. C., & Matthews, S. A. (2012). What has geography got to do with it? Using GWR to explore place-specific associations with prenatal care utilization. GeoJournal, 77(3), 331-341. https://doi.org/10.1007/s10708-010-9405-3
+
+
+Curtis, K. J., Voss, P. R., & Long, D. D. (2012). Spatial variation in poverty-generating processes: Child poverty in the United States. Social Science Research, 41(1), 146-59. https://doi.org/10.1016/j.ssresearch.2011.07.007
+
+Sampson, R., & Morenoff, J. (2004). Spatial (dis) advantage and homicide in Chicago neighborhoods. Spatially Integrated Social Science, 145-170. Retrieved from http://scholar.harvard.edu/files/sampson/files/2004.1_siss.pdf
+
+
+## Introduction to spatial stationarity and non-stationarity 
+
+**_Stationarity_** is a general term in statistics and math, and generally it refers to something that does not change over time or space. In demography the term has been used to describe the population implied by the life table, the **_stationary population_**, which stays the same size and is subject to constant rates of mortality. 
+
+In statistics and economics, data which constitute a **_time series_** can be stationary if the data show no long term positive or negative trend, such as this:
+
+```{r, echo=F, message=FALSE}
+x<-ts(rnorm(200),start = 1, end=200, frequency =1)
+dat<-data.frame(x=x, y=1:200)
+
+library(ggplot2); library(dplyr)
+dat%>%
+  ggplot(aes(x=y, y=x))+geom_point()+geom_smooth(col="red", method = "lm")+ylab("Value")+xlab("Time")
+
+
+```
+
+
+In spatial demography, and in statistical analysis that deals with data collected over space, we commonly assume that stationarity refers to the **_homogeneity_** of an effect, or, that the social/economic/health process that we are studying behaves the same way regardless of where you observe the process, or its spatial location, or the characteristics of the population of the place.
+
+
+In spatial statistical analysis, the latter is more often than not, assumed, and most statistical analysis that is taught only teaches the case where a single model is assumed to be equally valid for all locations in the data. In other words, we assume in our models that, our independent variable, *X*, affects or dependent variable, *Y*, the same way at all locations in our data. This is how traditional regression approaches work, and is an example of the stationarity assumption at work. 
+
+What if, however, we have a justifiable reason, or we are at least skeptical of the homogeneity of this model? This would imply that *X* affects *Y* in different ways, at different geographic locations, or in terms of the parameters of the model, we might be open to testing whether the relationship between *X* and *Y* is constant, or instead varies over space.
+
+
+## Approaches to spatial non-stationarity 
+
+When we wish to consider non-stationarity in an analysis, there are options at our disposal, and both are valuable, and both have been used widely in the literature. The two approaches we will describe in this course are the **_Spatial Regimes Model_** and the **_Geographically Weighted Regression Model_**. 
+
+These techniques are related, but come from different disciplinary traditions. The spatial regimes model comes from economics and the geographically weighted regression (GWR) strategy was developed in geography. This lesson addresses the spatial regimes model, and the next lesson addresses the GWR strategy. 
+
+## Spatial Regimes Model
+The first technique we will describe is the **_Spatial Regimes Model_**. A regime can be described as an imposed system of doing things. In the analytic sense, this approach is synonymous with model **_stratification_**. Stratification, in the statistical analysis sense, is the process of dividing the data using some characteristic of observations, and analyzing the data separately by each group. This is commonly done in demography as a way of examining how a model behaves in population sub-groups. Often, data may be split by race/ethnicity, education or gender of individuals. 
+
+In the spatial data analysis sense, by we can likewise split the data by some social or demographic attribute of observations, or by some larger geographic hierarchy. For example, we could divide US counties using the poverty rate into two groups, those counties with poverty rates less than the national average, and those counties with poverty rates greater than the national average. This would create two spatial regimes based on an economic indicator. Likewise, we could use a political boundary to split data, say, into states, which would lead to many spatial regimes, or regions, which would lead to fewer spatially defined regimes. 
+
+Regardless of whether we use a pre-existing demographic trait, or a political boundary, what we are assuming when we do this is that is an underlying **_structural_** condition that varies across the areas under study. 
+
+For example, in the chapter by Samson and Morenoff (2003), they design their spatial regimes in order to capture the underlying racial residential segregation within Chicago neighborhoods, by constructing "non-black" neighborhoods, where less than 75% of the residents were African American and "black" neighborhoods where greater than 75% of the residents were African American. They did this to control for the correlation between their primary independent variable, neighborhood disadvantage, and the racial makeup of neighborhoods. By splitting the data using the racial composition, they were better able to examine the role neighborhood deprivation plays in these type types of places, without having to worry about the inherently different level of deprivation in black and non-black neighborhoods. 
+
+Likewise, Curtis et al (2012), use the proportion of residents in counties who were racial/ethnic minorities to construct regimes of "high minority" and "low minority" concentrations. This again, allows the researchers to disentangle the effects of the industrial makeup of the economy on childhood poverty, while letting the underlying differences in both poverty and industrial structure be separate for the two regimes. 
+
+
+## Constructing a spatial regime model  
+
+When considering a spatial regime model, we are effectively splitting our data, as described in the two papers, based on some underlying structural characteristics. This translates into specifying separate models for each of the regions under consideration. There is no inherent restriction to the *type* of model you have to use. In fact, any linear, generalized linear or spatial regression model can be used. Below, we will first consider the case of the linear spatial regimes model, then use a spatial error model specification, as used by Curtis et al (2012). 
+
+By stratifying the data by region, or some socioeconomic condition, we can think of these multiple models as shown in the figure below. 
+
+In this figure, there are four regions, or regimes. Each regime has a separate regression equation, which leads to a fully stratified analysis, with the model intercepts $\alpha$, regression effects $\beta$ and residual variances allowed to vary by region. 
+
+![Spatial Regimes](C:/Users/ozd504/Documents/GitHub/DEM7263/images/regime.png)
+
+
+By doing this, we can see how the model parameters differ by regime, or control for confounding between the nature of the regimes themselves and other key independent variables, as described by Samson and Morenoff (2003).
+
+## Building a spatial regime model in R 
+
+The process of building a spatial regime model involves a few steps. 
+
+- First, examine the global model, and by global, we mean the regression model with all observations in it. 
+
+- Second, estimate models for each regime separately. 
+
+- Third, conduct a Chow test of the second and first models, in terms of the relative model fit. This is typically either a F-test.
+
+- Fourth, if the test from step 3 is statistically significant, then you have statistical evidence that the variables are affecting the outcome variable differently in the various regimes. Based on this, you can split the data into the various regimes you are considering.
+
+- Fifth, Run separate models for each regime in your analysis and describe the results. 
+
+For the data example for this lesson, we will conduct a spatial regime analysis by metropolitan/non-metropolitan status of US counties. The model we will examine is for the age-standardized mortality rate between 2011 and 2015. The data can be found [here](https://github.com/coreysparks/data/blob/master/uscounty_data.Rdata?raw=true) and a short description of the variables can be found [here](https://github.com/coreysparks/data/blob/master/uscounty_data_description.txt).
+
+
+# Constructing spatial regimes in R 
+
+Below, we load the data into R, create the spatial regimes (metro and non-metro counties) using the USDA's Urban Rural Continuum Codes.
+
+This system of classification classifies each county in the the United States into one of 9 categories, based on its population size and adjacency to a metropolitan area. The breakdown is as follows:
+
+![Rural Urban continuum codes](C:/Users/ozd504/Documents/GitHub/DEM7263/images/RUCCtable.PNG)
+
+and the spatial distribution of these codes can be seen below:
+
+![Map of Rural Urban continuum codes](C:/Users/ozd504/Documents/GitHub/DEM7263/images/rucc2013.png)
+
+Based upon the 9 level classification, many authors split the data into metropolitan and non-metropolitan areas, by using codes less than 7 to represent metropolitan areas and codes over 7 to represent non-metropolitan areas. 
+
+
+First, we read the data into R from the web. And look at the summary of the variables
+
+```{r data prep}
+library(nortest)
+library(car)
+library(lmtest)
+library(classInt)
+library(sandwich)
+library(tidyverse)
+library(spdep)
+library(spatialreg)
+library(sf)
+```
+
+```{r}
+
+dataurl<-"https://github.com/coreysparks/data/blob/master/uscounty_data.Rdata?raw=true"
+load(url(dataurl))
+summary(usco)
+head(usco)
+
+usco <- st_transform(usco, crs = 2163)
+```
+
+Next, we construct a grouping variable based on the values of the rural-urban continuum code variable, which is called `rucc` in the data.
+
+The map shows the spatial distribution of the metropolitan and non-metropolitan counties.
+
+```{r}
+
+usco$metro_cut<-cut(as.numeric(usco$rucc),
+                    breaks =c(0,6,10),
+                    include.lowest = T,
+                    labels = c("Metropolitan", "Non-Metropolitan"))
+library(scales)
+usco %>%
+  mutate(rucc_code=case_when(.$rucc=="01" ~ "1 - Metro - 1 million or more",
+                   .$rucc=="02" ~ "2- Metro - 250,000 to 1 million",
+                   .$rucc=="03" ~ "3- Metro - Fewer than 250,000",
+                   .$rucc=="04" ~ "4- Non-Metro - 20,000 or more, metro adjacent",
+                   .$rucc=="05" ~ "5- Non-Metro - 20,000 or more, nonadjacent",
+                   .$rucc=="06" ~ "6- Non-Metro - 2,500 to 19,999, metro adjacent",
+                   .$rucc=="07" ~ "7- Non-Metro - 2,500 to 19,999, nonadjacent",
+                   .$rucc=="08" ~ "8- <2,500 or completely rural, metro adjacent",
+                   .$rucc=="09" ~ "9- <2,500 or completely rural, nonadjacent"))%>%
+  ggplot()+
+  geom_sf(aes( fill=rucc_code, group=rucc_code))+
+  #coord_sf(crs = 2163)+
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  guides(title="County Type",fill = guide_legend(nrow = 4, byrow = TRUE ))+
+  #guides(fill=guide_legend(title="County Type"))+
+  ggtitle(label = "2013 USDA Rural-Urban Continuum Codes")+theme(legend.position="bottom")
+
+ggsave(filename="../images/rucc.png", units="in", width=10, height = 9)
+
+```
+
+```{r}
+usco %>%
+  ggplot()+
+  geom_sf(aes( fill=metro_cut, group=metro_cut))+
+  #coord_sf(crs = 2163)+
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  guides(fill=guide_legend(title="County Type"))+
+  ggtitle(label = "Metro and Nonmetro Counties")
+```
+
+
+Now that we have constructed the spatial regimes, we want to do a regression model for our mortality rates. First, we make a multiple linear regression model that includes the metro/non-metro variable as a predictor, and all other predictors. In the example below, the model uses the age-standardized period mortality rate from 2011-2015 as the outcome, and includes a variety of demographic and economic characteristics of counties. These are are z-score scaled prior to use in the model.
+
+Here's the basic OLS model:
+```{r}
+fit.0<-lm(Age.Adjusted.Rate~metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
+          data=usco)
+
+summary(fit.0)
+
+```
+
+
+Interpreting the model is done as follows. Non-metro areas (those with RUCC codes  over 7) have lower mortality rates than metro areas, based on the first coefficient in the model `r coef(fit.0)[2]`. County characteristics associated with higher mortality rates include: poverty  unemployment rates, and the proportion of female headed households. 
+
+County characteristics associated with lower mortality rates are: the proportion black and proportion Hispanic, the Gini coefficient and median home values. 
+
+Population density was not significantly related to mortality. 
+
+## Chow test for spatial regimes
+
+In order to test for the presence of spatial regimes, a [Chow test](https://en.wikipedia.org/wiki/Chow_test) is typically used. The Chow test, tests for whether the regression effects are constant between two groups. To do this, we have to split our data and run separate models for the metropolitan and non-metropolitan counties, then compare their residual sums of squares to the model for all counties. 
+
+Next, we construct two models that separate the data into the two levels of the `metro_cut` variable. This means that each type of county (metro and non-metro) will have its own regression coefficient for each predictor. 
+
+Once the data have been stratified, and the three models run, the Chow test is:
+$$\text{Chow test- F} = \frac{(S_c- (S_1 +S_2))/k}{(S_1+S_2)/(n_1 + n_2 - 2k)}$$
+
+Where $S_c$ is the residual sum of squares from the combined model, $S_1$ and $S_2$ are the residual sums of squares from the metro and non-metro models, $k$ is the number of coefficients in the models, and $n_1$ and $n_2$ are the sample sizes in the metro and non-metro samples. The Chow test is the compared to a F distribution with $k$ and $n_1 + n_2 - 2k$ degrees of freedom to judge significance. If the test is significant, then we can conclude that the coefficients of the metro and non-metro models are not the same as for the pooled sample. If that is the case, then we can go ahead and split the data into regimes and examine the results. 
+
+
+```{r}
+
+fit.a<-lm(Age.Adjusted.Rate~scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
+          data=usco)
+
+fit.m<-lm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco, subset=metro_cut=="Metropolitan")
+
+fit.n<-lm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco, subset=metro_cut=="Non-Metropolitan")
+```
+
+
+### Chow F test code
+
+```{r}
+RSS2<-sum(resid(fit.n)^2) + sum(resid(fit.m)^2)
+RSS0<-sum(resid(fit.a)^2)
+k<-length(coef(fit.a))
+n1<-as.numeric(table(usco$metro_cut)[1])
+n2<-as.numeric(table(usco$metro_cut)[2])
+ctest<-((RSS0 - RSS2)/k) / (RSS2 / (n1+n2- 2*k))
+ctest
+df(ctest, df1 = k, df2=n1+n2-2*k)
+```
+
+In this example, the test is very significant, with a p-value of `r df(ctest, df1 = k, df2=n1+n2-2*k) `, which is extremely small. 
+
+We can now interpret the two regime models. 
+
+### Metropolitan model
+```{r}
+
+summary(fit.m)
+
+```
+
+For the metropolitan counties, the overall interpretation is similar to what it was for the pooled data.
+
+### Non-metrpolitan model
+```{r}
+
+summary(fit.n)
+
+```
+
+The non-metropolitan model is different in its effects compared to the metro and the pooled model. Variables with positive impacts, meaning they increase mortality are the poverty rate, the proportion of female headed households and the population density. 
+
+Factors that decrease mortality are the proportions black and Hispanic, and the median home value. 
+
+In the non-metropolitan model, neither the Gini index or the unemployment rate show significant effects, and the density variable becomes significant. This is a good example of how spatial regimes can produce different models, where predictors behave differently in different settings. 
+
+## Spatial regime model building through interactions
+
+An alternative to fitting separate models is to estimate a model that includes all possible interactions between the predictors and the regime variable, and compare this model to the model fit to all observation. This is an analogous approach to the Chow test, as used by [Brazil 2015](http://onlinelibrary.wiley.com/doi/10.1002/psp.1968/full), and allows the regression coefficients to vary with the levels of the regime variable. Also, the test as done this way is much easier to perform. 
+
+```{r}
+fit.a<-lm(Age.Adjusted.Rate~metro_cut+(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco)
+
+fit.b<-lm(Age.Adjusted.Rate~metro_cut/(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco)
+
+anova(fit.a, fit.b, test="F")
+
+```
+
+Which gives a results almost exactly like that of the Chow test.
+
+The two papers that you read prior to this lesson used the spatially auto-regressive model in their spatial regimes analysis. The next example illustrates how this is done. 
+
+The problem with doing this is that you must specify separate spatial weight matrices for each spatial regime model. Below this is illustrated in R.
+
+First, a k=4 nearest neighbor matrix is created for the whole dataset, then separate k=4 nearest neighbor matrices are created for the two regimes. 
+
+```{r, message=FALSE, warning=FALSE}
+#k= 4 nearest neighbors for the whole dataset
+nbs<-knearneigh(coordinates(as_Spatial(usco)) , k=4)
+nbs<-knn2nb(nbs,sym=T)
+wts<-nb2listw(nbs)
+
+
+#k = 4  nearest neighbors for the metropolitan counties
+nbsmg_m<-knearneigh(coordinates(as_Spatial(usco[usco$metro_cut=="Metropolitan",])), k=4)
+nbs_m<-knn2nb(nbsmg_m, sym=T)
+wts_m<-nb2listw(nbs_m)
+
+#k = 4 nearest neighbors for the nonmetropolitan counties
+nbsmg_n<-knearneigh(coordinates(as_Spatial(usco[usco$metro_cut=="Non-Metropolitan",])), k=4)
+nbs_n<-knn2nb(nbsmg_n, sym=T)
+wts_n<-nb2listw(nbs_n)
+
+```
+
+Then we follow the same logic as we did before, where we estimate the models for the pooled sample, and for each regime. We follow the method described in [Brazil 2015](http://onlinelibrary.wiley.com/doi/10.1002/psp.1968/full)  for our modeling. 
+
+We first fit a spatial error model to the whole dataset, and include the metro/non-metro variable in the analysis
+
+
+### Global model
+```{r}
+#first the "global" model
+efit<-errorsarlm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)),
+                 data=usco,
+                 listw=wts,
+                 method="MC")
+
+#summary(efit, Nagelkerke=T)
+```
+
+
+Next, we form all interactions, as we did in the previous example, and compare the two models.
+
+```{r}
+#saturated model
+efit0<-errorsarlm(Age.Adjusted.Rate~metro_cut/(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)),
+                  data=usco,
+                  listw=wts,
+                  method="MC")
+
+anova(efit, efit0)
+```
+
+
+This test indicates that the regimes have different regression effects. Now we can fit models to each regime and describe the results. 
+
+
+## Spatial regime models - results 
+The summary of the metropolitan model is below:
+
+```{r}
+
+efit1<-errorsarlm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)),
+                  data=usco[usco$metro_cut=="Metropolitan",],
+                  listw=wts_m)
+
+summary(efit1, Nagelkerke=T)
+
+```
+
+All of the effects in the metropolitan model are significant. Factors associated with lower mortality are: proportions black and Hispanic, the Gini coefficient and median home values. Factors associated with higher mortality rates are poverty, unemployment, proportion female headed households and population density. 
+
+This contrasts with the global model, which showed no effect of population density on mortality. 
+
+And the summary of the non-metropolitan model:
+
+```{r}
+
+efit2<-errorsarlm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)),
+                  data=usco[usco$metro_cut=="Non-Metropolitan",],
+                  listw=wts_n)
+
+summary(efit2, Nagelkerke=T)
+
+```
+
+Non-metropolitan counties had the following positive associations with mortality: Poverty, unemployment, proportion female headed households and population density. Factors associated with lower mortality include proportions black and Hispanic, and median home values. 
+
+Compared to the global model, the Gini coefficient showed no effect, and the effect of population density was positively associated with mortality. 
+
+### Lesson Code example 
+
+To further practice creating spatial regimes, we can do one other example below. This example follows that of Samson and Morenoff, who used the proportion African American to create regimes. 
+
+Specifically, we use the quantiles of the variable `pblack` to create two spatial regimes. Counties with proportions of higher than 10.4% are classified as high African American counties, and those with proportions lower than 10.4% are classified as low African American counties.
+
+```{r}
+
+usco$black_cut<-cut(usco$pblack,
+                    breaks =quantile(usco$pblack, p=c(0, .75, 1)),
+                    include.lowest = T,
+                    labels = c("Low % African American", "High % African American"))
+
+usco %>%
+  ggplot()+
+  geom_sf(aes( fill=black_cut, group=black_cut))+
+  #coord_sf(crs = 2163)+
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  guides(fill=guide_legend(title="County Type"))+
+  ggtitle(label = "High and Low Proportion African American Counties")
+
+
+```
+
+```{r}
+fit.a<-lm(Age.Adjusted.Rate~black_cut+(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco)
+
+fit.b<-lm(Age.Adjusted.Rate~black_cut/(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco)
+
+anova(fit.a, fit.b, test="F")
+```
+
+The regimes model seems appropriate
+
+```{r}
+fit.low<-lm(Age.Adjusted.Rate~scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity), 
+          data=usco, subset= black_cut=="Low % African American")
+
+fit.hi<-lm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
+          data=usco, subset= black_cut=="High % African American")
+
+summary(fit.low)
+summary(fit.hi)
+
+
+```
+
+
+# References
+
+Fotheringham, A. S., Brunsdon, C., & Charlton, M. (2002). Geographically weighted regression : the analysis of spatially varying relationships. Wiley. Retrieved from https://www.wiley.com/en-us/Geographically+Weighted+Regression%3A+The+Analysis+of+Spatially+Varying+Relationships+-p-9780471496168
+
+Griffith, D. A. (2008). Spatial-filtering-based contributions to a critique of geographically weighted regression (GWR). Environment and Planning A, 40(11), 2751-2769. https://doi.org/10.1068/a38218
+
+Matthews, S. A., & Yang, T.-C. (2012). Mapping the results of local statistics: Using geographically weighted regression. Demographic Research, 26, 151-166. https://doi.org/10.4054/DemRes.2012.26.6
+
+Shoff, C., Yang, T. C., & Matthews, S. a. (2012). What has geography got to do with it? Using GWR to explore place-specific associations with prenatal care utilization. GeoJournal, 77(3), 331-341. https://doi.org/10.1007/s10708-010-9405-3
+
+Wheeler, D. C., & Páez, A. (2010). Geographically Weighted Regression. In Handbook of Applied Spatial Analysis (pp. 461-486). Berlin, Heidelberg: Springer Berlin Heidelberg. https://doi.org/10.1007/978-3-642-03647-7_22
+
+Wheeler, D., & Tiefelsdorf, M. (2005). Multicollinearity and correlation among local regression coefficients in geographically weighted regression. Journal of Geographical Systems, 7(2), 161-187. https://doi.org/10.1007/s10109-005-0155-6
