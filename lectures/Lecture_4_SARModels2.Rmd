@@ -160,10 +160,12 @@ summary(fit.lag, Nagelkerke=T)
 ### SAR - Error model
 
 ```{r}
-fit.err<-errorsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
+spdat$lag_hisp<- lag.listw(var= spdat$hisz , x=us.wt2)
+
+fit.err<-errorsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz+lag_hisp,
                     spdat,
                     listw=us.wt2,
-                    etype="error")
+                    etype="error", method = "MC")
 summary(fit.err, Nagelkerke=T)
 
 ```
@@ -200,6 +202,10 @@ fit.sac<-sacsarlm(mortz~rurz+blacz+hisz+unemz+hvalz+densz+giniz,
                   type="sac")
 summary(fit.sac, Nagelkerke=T)
 
+
+spdat$error<- fit.sac$residuals
+
+moran.test(spdat$error, listw=us.wt2)
 ```
 
 ### SMA Model
@@ -316,7 +322,7 @@ So we see that, for instance, for the direct impact of %rural, -.117/-.127= `r r
 It's common to see some polygons with missing data for the outcome, below I show how to deal with this. First I knock out some observations to mimic random missing data. 
 
 ```{r}
-samp<-sample(1:dim(spdat@data)[1],size = 500, replace = F)
+samp<-sample(1:dim(spdat)[1],size = 500, replace = F)
 spdat$newmort<-spdat$mortz
 spdat$newmort[samp]<-NA
 
@@ -357,7 +363,7 @@ f1<-tm_shape(spdat)+
               legend.hist=T  )+
   tm_format(format = "World", legend.outside=T)
 
-spdat$fitted_lag <- fitted(fit.durb) *sd(spdat$ARSTOT00) + mean(spdat$ARSTOT00)
+spdat$fitted_lag <- fitted(fit.sac) *sd(spdat$ARSTOT00) + mean(spdat$ARSTOT00)
 
 f2<-tm_shape(spdat)+
   tm_polygons("fitted_lag",title="Estimated Mortality Rate",
