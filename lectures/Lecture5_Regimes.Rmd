@@ -152,10 +152,15 @@ The map shows the spatial distribution of the metropolitan and non-metropolitan 
 
 ```{r}
 
-usco$metro_cut<-cut(as.numeric(usco$rucc),
-                    breaks =c(0,6,10),
-                    include.lowest = T,
-                    labels = c("Metropolitan", "Non-Metropolitan"))
+usco$metro_cut<- ifelse(as.numeric(usco$ruc)<=3, "Metropolitan", "Nonmetropolitan")
+  
+usco$rural_cut<- ifelse(as.numeric(usco$rucc)<=7, "Urban", "Rural")
+
+# 
+#   cut(as.numeric(usco$rucc),
+#                     breaks =c(0,6,10),
+#                     include.lowest = T,
+#                     labels = c("Metropolitan", "Non-Metropolitan"))
 library(scales)
 usco %>%
   mutate(rucc_code=case_when(.$rucc=="01" ~ "1 - Metro - 1 million or more",
@@ -224,14 +229,13 @@ Where $S_c$ is the residual sum of squares from the combined model, $S_1$ and $S
 
 ```{r}
 
-fit.a<-lm(Age.Adjusted.Rate~scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
+fit.a<-lm(Age.Adjusted.Rate~scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval),
           data=usco)
 
-fit.m<-lm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
-          data=usco, subset=metro_cut=="Metropolitan")
+fit.m<-lm(Age.Adjusted.Rate~scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval), data=usco, subset=metro_cut=="Metropolitan")
 
-fit.n<-lm(Age.Adjusted.Rate~(scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity)), 
-          data=usco, subset=metro_cut=="Non-Metropolitan")
+fit.n<-lm(Age.Adjusted.Rate~scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval), 
+          data=usco, subset=metro_cut=="Nonmetropolitan")
 ```
 
 
@@ -303,6 +307,11 @@ nbs<-knearneigh(coordinates(as_Spatial(usco)) , k=4)
 nbs<-knn2nb(nbs,sym=T)
 wts<-nb2listw(nbs)
 
+
+met<-usco%>%
+  filter(metro_cut=="Metropolitan")
+nmet<-usco%>%
+  filter(metro_cut!="Metropolitan")
 
 #k = 4  nearest neighbors for the metropolitan counties
 nbsmg_m<-knearneigh(coordinates(as_Spatial(usco[usco$metro_cut=="Metropolitan",])), k=4)
