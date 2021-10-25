@@ -1,0 +1,467 @@
+---
+title: "DEM 7263 -  Calculating Indices of Residential Segregation"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+---
+
+# Lesson Overview
+
+### Objectives
+In this lesson, we will describe several commonly used measures of residential segregation, but the real focus of this lesson is to illustrate how these measures of segregation are calculated for areas. While the literature in social science often discusses these measures, they are rarely illustrated in terms of their calculations. 
+
+
+### Readings
+Please read the following articles to familiarize yourselves with the concepts of segregation and their measurement. 
+
+Massey, D. S., & Denton, N. A. (1988). The Dimensions and Residential Segregation. Social Forces, 67, 281-315. https://doi.org/10.1093/sf/67.2.281
+
+Massey, D. S., Gross, A. B., & Eggers, M. L. (1991). Segregation, the concentration of poverty, and the life chances of individuals. Social Science Research, 20(4), 397-420. https://doi.org/10.1016/0049-089X(91)90020-4
+
+
+
+### Some background on segregation
+Segregation can be thought of as the extent to which individuals of different groups occupy or experience different social or economic environments. 
+
+A measure of segregation, then, requires that we define the social environment of each individual that we quantify the extent to which these social environments differ across individuals.
+
+There is little agreement about which measure to use under which circumstances
+Massey and Denton [(1988)](http://sf.oxfordjournals.org/content/67/2/281.short) attempted to quell the disagreement by incorporating many indices under one conceptual framework, referred to as the Dimensions of segregation. 
+
+**Dimensions of segregation**
+
+Segregation can be thought of as the degree to which two or more groups live separately from one another. Living apart could imply that groups are segregated in a variety of ways. Researchers often argue for the adoption of one index and exclude others. Massey and Denton (1988) identify 5 distinct dimensions of residential segregation by performing a multivariate analysis of many individual measures of segregation. These dimensions are:
+
+**Evenness** is the degree to which the percentage of minority members within residential areas approaches the minority percentage of the entire neighborhood.
+
+**Exposure** is the degree of potential contact between minority and majority members in neighborhoods
+
+**Concentration** is the relative amount of physical space occupied by a minority group
+
+**Centralization** is the degree to which minority members settle in and around the center of a neighborhood
+
+**Clustering** is the extent to which minority areas adjoin one another in space
+
+## Common measures for each dimension 
+
+While the dimensions are inclusive of many inter-related measures, several of these measures are commonly seen in the literature in demography. For an excellent reference for the formulas for each of these measures, consult the US Census Bureau's [report](https://www.census.gov/hhes/www/housing/resseg/pdf/app_b.pdf) on segregation measures. 
+
+
+The most common measure of **Evenness** is the **_Dissimilarity Index_**. This index measures the fraction of one group that would have to move to another area, in order to equalize the population distribution. The  formula for this index is:
+
+$$D = .5 * \sum_i^n \left | \frac{a_i}{A} - \frac{b_i}{B}  \right |$$
+
+Where $a_i$ is the population in group $a$ in the $i^{th}$ subarea, and $A$ is the population of group $A$ in the larger area. Similarly, $b_i$ is the population in group $b$ in the $i^{th}$ subarea, and $B$ is the population of group $B$ in the larger area. The index ranges between 0 and 1, with 0 being pure integration, and 1 being perfect segregation.  Typically values over .5 are considered to be very high levels of segregation. An example of a highly segregated city, according the the Non Hispanic White and Non Hispanic black populations, is Chicago, IL, which had a D value of .759 in 2010. A broader look at Chicago's population can be found through the [Diversity and Disparities project website](https://s4.ad.brown.edu/projects/diversity/segregation2010/msa.aspx?metroid=16974).
+
+
+The most commonly used measures of the **Exposure** dimension are the indices of Isolation and Interaction. The **Exposure** dimension measures the likelihood of population subgroups interacting with one another using the index of Interaction. On the other hand, the index of Isolation, measures how likely it is that one group is isolated, or only surrounded by other members of the same group. The Interaction index is calculated:
+
+$$\text{Interaction, }_x P_{y} = \sum_i  \frac{b_i}{B} * \frac{a_i}{t_i} $$
+Which also includes the population size of the subarea, $t_i$ in the calculation. This index is actually a probability and ranges between 0 and 1. Higher values (closer to 1), indicate more contact between the two groups, while values near 0 indicate more isolation. 
+
+The Isolation index is calculated in a similar fashion, except instead of including the second group in the calculation, it uses the first group only. 
+
+$$\text{Isolation, }_x P_{x} = \sum_i  \frac{b_i}{B} * \frac{b_i}{t_i} $$
+This index is actually a probability and ranges between 0 and 1. Higher values (closer to 1), indicate more isolation of the group with its own members, while values near 0 indicate less isolation. 
+
+These two values are complementary of one another, in a conceptual sense, but not exact numerical complements. 
+
+## Other dimensions of segregation 
+
+The most commonly used measure of the **Concentration** dimension is the Delta Index. This index measures the uniformity of the distribution of group members within a place, using the distribution of the group members and the distribution of sub-unit areas. The formula for delta is:
+
+$$\delta = .5 * \sum_i^n \left | \left( \frac{a_i}{A} \right) - \left( \frac{Area_i}{Area_{total}} \right ) \right |$$
+
+Where $\Area_i$ is the geometric area of the $i^{th}$ sub-unit in the larger area and $Area_{total}$ is the total area of the larger unit. 
+
+The most commonly used measure of the **Centralization** dimension is the proportion of total minority group population residing in the central city, it is easily calculated as:
+
+$$PCC = a_{cc}/A$$
+
+Where $a_{cc}$ is the population of group $a$ in the central city, and $A$ is the population in the larger area. The problem with this is that the central city is often poorly defined, or is defined by political means rather that created by natural processes or by the Census bureau, so it can be difficult to delineate this population. Another measure of centralization is proposed by Massey and Denton in their 1988 paper. They call this the **Index of relative centralization**. This index measures the difference in the rank of each group relative to a central point within the place, such as a central business district, although this can also be difficult to define and is not a standard or routinely defined area. The formula for this is: 
+
+$$RCE = \left ( \sum_i  B_{i-1} A_i \right) - \left (\sum_i  B_{i} A_{i-1} \right)$$
+
+Where the $B_i$ and $A_i$ are the proportion of the city's total population in the $i^{th}$ subarea. The subareas are ranked by their relative distance to the central city, and the index measures the difference in the spatial distribution of the two groups' populations.  
+
+
+The most commonly used measure of the **Clustering** dimension is the **Index of Spatial Proximity**. This measure relies on calculating the pair-wise spatial distances between all subareas within the larger area. Then the index calculates the spatial closeness of each group to itself, and the spatial closeness of each group to one another. Needless to say, the calculation has several steps. 
+
+First, we calculate the average distance between members of the same group, for each of the two groups under consideration. These are called $P_{aa}$ and $P_{bb}$. 
+
+$$P_{aa} = \sum_i \sum_j a_i a_j c_{ij} /A^2$$
+$$P_{bb} = \sum_i \sum_j b_i b_j c_{ij} /B^2$$
+and the average proximity between the two groups is $P_{ab}$
+
+$$P_{ab} = \sum_i \sum_j a_i b_j c_{ij} /AB$$
+
+The key to this calculation is having the matrix $c_{ij}$ which is either the spatial weight matrix or the matrix of distances between spatial units, which we have discussed in prior lessons.
+
+## Measures of Economic segregation. 
+The classic literature in sociology and segregation focuses on how different race or ethnic groups live apart from one another, but the same logic can be applied to economic classes, or income distributions. 
+
+While the level of income inequality in cities is often tied to other social problems, purely economic measures of income inequality are also important to understand. The level of income inequality and segregation are examples of contextual level effects that we have discussed previously in this course, and have been documented in the literature as having impacts on educational and health outcomes, as well as being associated with other key indicators of community quality of life (Reardon and Bischoff, 2011). 
+
+
+**Measures of economic segregation**
+Some measures of economic segregation are calculated by the Census bureau directly, in the American Community Survey, the Census provides the Gini Index of income inequality for many geographies. This measure is widely used in economics and give a general picture of the equality of the income distribution within a place, although it says nothing about how the different income groups live with respect to one another. 
+
+A second measure of income segregation is very simple to calculate, although it is frequently criticized as being arbitrary. It is the ratio of the median household income in each subarea to the median household income in the larger area. It is also easy to interpret. If a subarea has a lower income than the larger area, the index will be less than one, and if a subarea has a higher income, the index is greater than one. 
+
+You can find maps of this index for many US metro areas through the Brown University [Diversity and Disparities project](https://s4.ad.brown.edu/projects/diversity/IncSeg1/IncMapsDload.htm), which provides maps of this ratio.
+
+
+## Data preparation for segregation calculations
+For most of the measures described in this lesson, you will need your data arrayed in a certain way. 
+
+The examples that follow mimic the described methods in the article by  Sparks [(2014)](http://link.springer.com/article/10.1007/BF03354906), where the author shows how to calculate three common measures of segregation: Dissimilarity, Isolation/Interaction and Theile's Entropy index for multiple groups. 
+
+In general, this process involves forming a dataset for the sub-units of analysis, you can think of these as census tracts within a larger area, such as a metropolitan area or a county. 
+
+Most of the indices also require the total populations for the larger area as well. 
+
+Then, the indices are generally calculated as ratios or differences between the subareas and the larger area, and these calculations are then summed across the units within the larger area to calculate the index. 
+
+R has some functions that make this process easier, since we can use `tidycensus` to get data on the fly, and use the `tapply` or `aggregate` functions in base R, or use tools in `dplyr` to sum the calculations across the larger units.
+
+### Additional issues
+In previous lessons, we have talked about how some Census geographies are nested and others are not. This is a big problem for easily calculating segregation indices. For instance, tracts are nested perfectly within counties, and you can easily identify the county a tract is in based of it's GEOID field that Census creates. For example, the tract 1101, in Bexar county, Texas has GEOID : 48029110100. The first five digits of the tract identifier automatically gives you the county, 48029, so you know automatically what the larger level unit identifier is. 
+
+If your larger area is a metropolitan area, or a city, then you have a problem. The GEOID's for these do not share the same structure as tracts. For example, the GEOID for the San Antonio, TX metropolitan statistical area is `310M100US41700`, which has nothing in common with the tract identifiers. 
+
+The most direct way of assigning tracts to non-county larger units is to use Geographic Information System tools, such as a geometric intersection, to assign the identifiers of the larger area to the tracts. 
+
+In the examples that follow, we will do a relatively simple example of calculating the dissimilarity and isolation indices for counties, then use GIS tools to calculate these for metropolitan areas. 
+
+
+
+## Calculating Segregation in R 
+First we need to load some libraries. We will use R to get all of our census data for us, either from the 2010 100% Summary File 1 or more recent distributions of the American Community Survey [(via the `tidycensus` library)](https://walkerke.github.io/tidycensus/). 
+
+```{r, warning=FALSE, message=FALSE, tidy=TRUE}
+library(tidycensus)
+
+```
+
+Below, we will use counties in Texas for the example and use the 2010 ACS B03002 table. This table gives population estimates by race and Hispanic ethnicity. 
+
+```{r, results="hide"}
+race_table10 <-  get_acs(geography = "tract",
+                         year=2015,
+                         geometry = F,
+                         output="wide",
+                         table = "B03002",
+                         cache_table = T,
+                         state = "TX")
+
+```
+
+Now, we rename some variables:
+
+```{r}
+library(dplyr)
+trdat<-race_table10%>%
+  mutate(nhwhite=B03002_003E,
+         nhblack=B03002_004E,
+         nhother= B03002_005E+B03002_006E+B03002_007E+B03002_008E+B03002_009E+B03002_010E,
+         hisp=B03002_012E, 
+         total=B03002_001E,
+         year=2015,
+         cofips=substr(GEOID, 1,5))%>%
+  select(GEOID,nhwhite, nhblack ,  nhother, hisp, total, year, cofips )%>%
+  arrange(cofips, GEOID)
+
+#look at the first few cases
+head(trdat)
+
+```
+
+Following our general outline of steps to follow, now we need the same data, but for the larger units. We can either do another call to `get_acs()` and request county data instead of tracts, or just sum the data we already have, up from the tract level to the county level. Below, we do the latter. 
+
+```{r}
+#We need the county-level totals for the total population and each race group
+codat<-trdat%>%
+  group_by(cofips)%>%
+  summarise(co_total=sum(total),
+            co_wht=sum(nhwhite),
+            co_blk=sum(nhblack),
+            co_oth=sum(nhother),
+            cohisp=sum(hisp))
+
+#we merge the county data back to the tract data by the county FIPS code
+merged<-left_join(x=trdat,
+                  y=codat,
+                  by="cofips")
+#have a look and make sure it looks ok
+head(merged)
+```
+
+That is the mechanics for setting up the data. Now we will calculate the indices:
+
+### 2 group segregation measures in counties
+
+**Dissimilarty Index**
+Now we begin the segregation calculations, First we calculate the tract-specific contribution to the county dissimilarity index, then we use the 
+`tapply()` function to sum the tract-specific contributions within counties. The Dissimilarity index for blacks and whites is:
+
+$$D = .5* \sum_i \left | \frac{b_i}{B} - \frac{w_i}{W} \right |$$
+where $b_i$ is the number of blacks in each tract, B is the number of blacks in the county, $w_i$ is the number of whites in the tract, and W is the number of whites in the county. 
+
+```{r}
+co.dis<-merged%>%
+  mutate(d.wb=abs(nhwhite/co_wht - nhblack/co_blk))%>%
+  group_by(cofips)%>%
+  summarise(dissim= .5*sum(d.wb, na.rm=T))
+```
+
+
+**Interaction Index**
+
+Next is the interaction index for blacks and whites. In the calculation first population is minority population, second is non-minority population. The formula is:
+$$\text{Interaction} = \sum_i  \frac{b_i}{B} * \frac{w_i}{t_i} $$
+
+```{r}
+co.int<-merged%>%
+  mutate(int.bw=(nhblack/co_blk * nhwhite/total))%>%
+  group_by(cofips)%>%
+  summarise(inter_bw= sum(int.bw, na.rm=T))
+
+```
+
+**Isolation Index**
+
+Next is is the isolation index for blacks. The formula is:
+
+$$\text{Isolation} = \sum_i  \frac{b_i}{B} * \frac{b_i}{t_i} $$
+
+```{r}
+
+co.isob<-merged%>%
+  mutate(isob=(nhblack/co_blk * nhblack/total))%>%
+  group_by(cofips)%>%
+  summarise(iso_b= sum(isob, na.rm=T))
+
+```
+
+We can easily join these tables together and create a map now. 
+
+```{r, results="hide"}
+library(tidyverse)
+tx_seg<-list(co.dis, co.int, co.isob)%>% reduce (left_join, by="cofips")
+
+library(tigris)
+options(tigris_class = "sf")
+tx_counties<- counties(state="TX", cb=T, year=2010)
+tx_counties$cofips<-substr(tx_counties$GEO_ID, 10,15)
+
+tx_seg_dat<- geo_join(tx_counties, tx_seg, by_sp="cofips", by_df="cofips")
+```
+
+Now we can plot our map of segregation, in this case, we map the black isolation index. 
+
+
+```{r}
+
+library(ggplot2)
+
+tx_seg_dat%>%
+  ggplot()+geom_sf(aes(fill=iso_b))+
+  scale_fill_viridis_c()+
+  scale_color_viridis_c()+
+  ggtitle("Non-Hispanic Black isolation index", subtitle = "2015 ACS")
+
+```
+
+
+### Economic Segregation calculation
+
+The next example will be to calculate the income ratio index which we described above, while not ideal, this should provide a simple visualization of income inequality within places. We will focus on Philadelphia county again.
+
+First, we query the median household incomes in San Antonio Census tracts, then the income for Bexar county as a whole, and form the ratio.
+
+```{r, results="hide"}
+sa_tract<-get_acs(geography="tract",
+                  state = "TX",
+                  county = "Bexar",
+                  year=2010,
+                  variables = "B19013_001E",
+                  output = "wide",
+                  geometry = T)
+
+sa_tract<-sa_tract%>%
+  mutate(med_inc_tr=B19013_001E,
+         cofips=substr(GEOID, 1,5))
+
+tx_counties<-get_acs(geography="county",
+                     state = "TX",
+                     output="wide", 
+                     year=2010,
+                     variables = "B19013_001E")
+
+tx_county<-tx_counties%>%
+  filter(GEOID=="48029")%>%
+  mutate(med_inc_co=B19013_001E)%>%
+  select(GEOID, med_inc_co)
+
+tx_merge<-geo_join(sa_tract, tx_county, by_sp="cofips", by_df="GEOID")
+
+tx_merge$inc_ratio<-tx_merge$med_inc_tr/tx_merge$med_inc_co
+
+```
+
+
+Now we create a map of the ratio in the tracts within Philadelphia County. we see that the central and south western portions of the city have incomes lower than the county, while the southeastern and western portions of the city have higher incomes that the county as a whole. 
+
+```{r}
+tx_merge%>%
+  filter(is.na(inc_ratio)==F)%>%
+  ggplot()+
+  geom_sf(aes(fill=inc_ratio))+
+  scale_fill_viridis_c()+
+  scale_color_viridis_c()+
+  ggtitle("Ratio of Tract Income to County Income",
+          subtitle = "Bexar County, TX - 2010 ACS")
+```
+
+
+## Using GIS tools to creat segregation indices for other geographies.
+
+As we mentioned earlier in the lesson, unless the unique identifiers for two geographies share a common pattern, they cannot be easily merged, unless we use GIS tools. Here, we will perform a spatial intersection between tracts and metro areas to help us calculate a segregation index for non-overlapping geographies.
+
+We will use the example of Philadelphia again, but use core based statistical areas instead of counties. These are census geographies that correspond to metropolitan areas, and do not share a common GEOID with tracts. 
+
+```{r, results="hide"}
+cbsas<-core_based_statistical_areas(cb=T, year=2010)
+tx_cbsas<-cbsas%>%
+  filter(CBSA=="41700")
+
+
+
+
+tx_counties<-get_acs(geography="county",
+                     state = "TX",
+                     output="wide",
+                     geometry = T, 
+                     year=2010,
+                     variables = "B19013_001E")
+
+bexar_county<-tx_counties%>%
+  filter(GEOID=="48029")%>%
+  mutate(med_inc_co=B19013_001E)%>%
+  select(GEOID, med_inc_co)
+
+
+```
+
+We can easily see that Bexar county is a much smaller part of the San Antonio MSA: 
+
+```{r}
+ggplot(data=tx_cbsas)+
+  geom_sf(fill="grey")+
+  geom_sf(data=bexar_county,
+          fill="black")
+```
+
+Indeed, the San Antonio MSA contains the cities of San Antonio, New Braunfels, and several more rural counties.
+
+In order to calculate the segregation indices, we will need tracts.  
+
+
+```{r, results="hide"}
+race_table10 <-  get_acs(geography = "tract",
+                         year=2015, 
+                         geometry = T,
+                         output="wide",
+                         table = "B03002",
+                         state = "TX")
+
+trdat<-race_table10%>%
+  mutate(nhwhite=B03002_003E,
+         nhblack=B03002_004E,
+         nhother= B03002_005E+B03002_006E+B03002_007E+B03002_008E+B03002_009E+B03002_010E,
+         hisp=B03002_012E, 
+         total=B03002_001E,
+         year=2010,
+         cofips=substr(GEOID, 1,5))%>%
+  select(GEOID,nhwhite, nhblack ,  nhother, hisp, total, year, cofips )%>%
+  arrange(cofips, GEOID)
+
+```
+
+Now we will do the geometric intersection between the tracts and the metro area polygon. If you have never seen a geometric intersection, it is what you use if you want to combine attributes of two polygon layers of spatial information, and only keep the areas that are shared in common between the two layers. 
+
+```{r}
+
+library(sf)
+
+tr_met_int<-st_intersection(tx_cbsas, trdat)
+
+
+```
+
+Now we calculate the metro area totals for the population groups, and joining it back to the tract data:
+
+```{r}
+met_sum<-tr_met_int%>%
+  group_by(CBSA)%>%
+  summarise(met_tot=sum(total, na.rm = T),
+            met_bl=sum(nhblack, na.rm = T), 
+            met_wh=sum(nhwhite, na.rm=T))
+
+st_geometry(met_sum)<-NULL
+
+met_seg<-left_join(tr_met_int,
+                   met_sum,
+                   by="CBSA")
+
+```
+
+We make a simple map of one of the variables, showing the extent of the MSA now:
+
+```{r}
+met_seg%>%
+  mutate(pwhite=nhwhite/total)%>%
+  ggplot()+
+  geom_sf(aes(fill=pwhite))+
+  scale_fill_viridis_c(na.value = "grey50")+
+  scale_color_viridis_c(na.value = "grey50")+
+  ggtitle("Proportion Non-Hispanic white ",
+          subtitle = "San Antonio- New Braunfels MSA - 2015 ACS")
+
+```
+
+The same process of calculating the MSA segregation measure can be followed now. We see the dissimilarity index between blacks and whites is lower than it was for Philadelphia county alone, although both are considered to be very high levels of segregation. 
+
+```{r}
+met.dis<-met_seg%>%
+  mutate(d.wb_met=abs(nhwhite/met_wh - nhblack/met_bl))%>%
+  group_by(CBSA)%>%
+  summarise(dissim= .5*sum(d.wb_met, na.rm=T))
+
+met.dis$dissim
+tx_seg_dat[tx_seg_dat$NAME=="Bexar","dissim"]
+```
+
+
+## Lesson Wrap up 
+In this lesson, we saw how residential segregation is commonly measured. We reviewed the five dimensions of segregation as defined by Massey and Denton, and reviewed some measures of economic or income segregation.  
+
+We used R to download and calculate commonly used indices of segregation, and saw how to use R as a GIS program in order to calculate segregation indices even when the larger area unit does not share a common identifier with the smaller area units. 
+
+We can use these indices of segregation in other analyses, or for projects devoted to studying how segregation is patterned by other socioeconomic forces, or how it has changed over time. 
+
+
+## References
+
+Bischoff, K., & Reardon, S. F. (2013). Residential Segregation by Income, 1970-2009. Retrieved from https://s4.ad.brown.edu/Projects/Diversity/Data/Report/report10162013.pdf
+
+Massey, D. S., & Denton, N. a. (1988). The Dimensions of Residential Segregation. Social Forces, 67(2), 281. https://doi.org/10.2307/2579183
+
+Reardon, S. F., & Bischoff, K. (2011). Income Inequality and Income Segregation. American Journal of Sociology, 116(4), 1092-1153. https://doi.org/10.1086/657114

@@ -1,0 +1,246 @@
+---
+title: "DEM 7263 - Clustering of Spatial Data"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+---
+
+```{r data prep, echo=FALSE}
+library(tidyverse)
+library(spdep)
+library(spatialreg)
+library(sf)
+library(cluster)
+```
+
+In this topic, we will discuss **Unsupervised Learning**, or as we talked about [last time](http://rpubs.com/corey_sparks/536994), the situation where you are looking for groups in your data when your data don't come with a group variable. I.e. sometimes you want to find groups of similar observations, and you need a statistical tool for doing this. 
+
+In statistics, this is called **Cluster analysis**, another case of the machine learning people inventing a new word for something and taking credit for a type of analysis that's been around for fifty years. 
+
+### Cluster analysis
+- Attempts to find sub-groups within a data set
+- Observations within a particular sub-gruop are statistically more similar to other members of their sub-group than to members of another sub-group
+- Many ways in which to do this:
+    - K-means/K-medioids
+    - Hierarchical clustering
+    - Model based clustering
+    - Latent class analysis
+- All of these methods use observed data to measure the dissimilarity between observations, then create groups, or clusters (buckets) from these observations. 
+
+### Metrics of similiarity 
+- Distance based
+- Euclidean distances between two observations, *i* and *j* is
+
+$$d(x_i,x_j) = \sqrt{(x_i-x_j)'(x_i-x_j)}$$
+
+Where the *x's* are the variables measured on the two observations, for instance, if we have 3 x variables for two observations, then the distance between them is:
+
+```{r}
+
+x1<-c(1,5, 1)
+x2<-c(5, 1, 2)
+
+dist( rbind(x1, x2), method = "euclidean")
+
+```
+
+If the two observations are more similar, the distance is smaller:
+
+```{r}
+
+x1<-c(1,5, 1)
+x2<-c(1, 2, 2)
+x3<-c(8,7,10)
+
+dist( rbind(x1, x2, x3), method = "euclidean")
+
+```
+
+and vice versa. 
+
+
+### Load US County Data
+
+```{r}
+
+dataurl<-"https://github.com/coreysparks/data/blob/master/uscounty_data.Rdata?raw=true"
+load(url(dataurl))
+summary(usco)
+head(usco)
+
+usco <- st_transform(usco, crs = 2163)
+```
+
+
+
+Now, let's do some basic plotting of some of the variables, in this case, i'll plot the mortality rate, poverty and the % Hispanic.
+
+```{r}
+library(GGally)
+usd<-usco
+st_geometry(usd)<-NULL
+usd%>%
+  select(Age.Adjusted.Rate, ppov,phisp, state)%>%
+  filter(complete.cases(.), state=="48")%>%
+  select(Age.Adjusted.Rate, ppov,phisp)%>%
+  ggpairs()
+```
+
+
+## Hierarchical clustering
+
+First we form our matrix of distances between all the counties on our observed variables:
+```{r}
+
+usd_sub<-usd%>%
+  select(Age.Adjusted.Rate, ppov,phisp, state)%>%
+  filter(complete.cases(.), state =="48")
+
+dmat<-dist(usd_sub[, -4],
+           method="euclidean") #-4 drops state from the calculations
+
+```
+
+Then we run a hierarhical clustering algorithm on the matrix. There are lots of different ways to do this, we will just use the simplest method, the single-linkage, or nearest neighbor approach. This works by first sorting the distances from smallest to largest, then making clusters from the smallest distance pair. 
+
+Once this is done, this pair is merged into a cluster, their distance is then compared to the remaining observations, so on and so on, until you have a set of clusters for every observation. 
+
+The original way to plot these analyses is by a **dendrogram**, or tree plot. 
+
+```{r}
+hc1<-hclust(d= dmat,
+            method="single")
+plot(hc1,
+     hang=-1,
+     main="Single linkage cluster analysis of Texas County data")
+
+library(scorecard)
+library(factoextra)
+library(class)
+library(RColorBrewer)
+
+fviz_dend(hc1, k=3,
+          k_colors =brewer.pal(n=3, name="Accent"),
+          color_labels_by_k = TRUE,
+          ggtheme = theme_minimal())
+
+groups<-cutree(hc1, k=3)
+table(groups)
+
+```
+
+So this is silly because the method makes clusters that only had one observation. This is a weakness of the single linkage method, instead we use another method. Ward's method is typically seen as a better alternative because it tends to find clusters of similar size.
+
+```{r}
+hc2<-hclust(d= dmat, method="ward.D")
+plot(hc2,
+     hang=-1, 
+     main="Ward's cluster analysis of Texas county data")
+
+
+
+fviz_dend(hc2, k=3,
+          k_colors = brewer.pal(n=3, name="Accent"),
+          color_labels_by_k = TRUE,
+          ggtheme = theme_minimal())
+
+groups<-cutree(hc2, k=3)
+table(groups)
+
+```
+
+```{r, fig.width=10, fig.height=8}
+usd_sub$group1<-factor(cutree(hc2, k=3))
+
+usd_sub%>%
+  select(-state)%>%
+  ggpairs(aes(color=group1))
+  
+```
+
+This seems to be splitting the data based on the mortality rate mostly. We can see what this looks like on the map as well:
+
+```{r}
+tx<- usco%>%
+  filter(state =="48", complete.cases(Age.Adjusted.Rate, phisp, ppov))
+
+tx$group <- factor(cutree(hc2, k=3))
+
+tx%>%
+  ggplot()+
+  geom_sf(aes(fill = factor(group)))
+```
+
+So we may be able to use these as regimes in an analysis.
+
+## K-means
+
+- Another type of clustering algorithm
+- Will always find a given number of *k* clusters.
+- Calculates the *centroid* of the data - mean vectors
+- Assigns observations to the closest centroid. 
+- Ideally we can minimize a within cluster variance measure to find the optimal number, but there are other methods as well.
+
+```{r}
+
+library(ClusterR)
+km2<-KMeans_rcpp(data=usd_sub[, c(1:3)], cluster=3, num_init = 10)
+km2
+
+usd_sub$cluster<-as.factor(km2$cluster)
+
+```
+
+
+```{r}
+usd_sub%>%
+  select(-state, -group1)%>%
+  ggpairs(aes(color=cluster))
+
+```
+
+```{r}
+tx$km_group <- as.factor(km2$cluster)
+tx%>%
+  ggplot()+
+  geom_sf(aes(fill = factor(km_group)))+
+  ggtitle("K-means clusters for Texas Counties, k=3")
+```
+
+### Finding optimal number of clusters
+
+Here I use the `factoextra` package to compute various fit statistics for different number of clusters. The first is the so-called *elbow method*, because it resembles an elbow on an arm. It plots the within cluster variation versus the number of clusters. 
+
+
+```{r}
+library("factoextra")
+my_data <- scale(usd_sub[, c(1:3)])
+
+fviz_nbclust(my_data, kmeans, method = "wss") +
+geom_vline(xintercept = 3, linetype = 2)
+
+```
+
+*Silhouette method*
+Other methods are the *silhouette method*, which displays a measure of how close each point in one cluster is to points in the neighboring clusters. Silhouette coefficients (as these values are referred to as) near +1 indicate that the sample is far away from the neighboring clusters.
+
+```{r}
+fviz_nbclust(my_data, kmeans, method = "silhouette")
+```
+
+*Gap statistic*
+The gap statistic compares the patterns of observed distances between members of a cluster to those produced by simulating random observations. The estimate of the optimal clusters $k$ will be the value that maximizes the *Gap statistic*
+
+```{r}
+fviz_nbclust(my_data, kmeans, method = "gap_stat")
+
+```
+
+
