@@ -403,7 +403,7 @@ library(sf)
 
 tr_met_int<-st_intersection(tx_cbsas, trdat)
 
-
+head(tr_met_int)
 ```
 
 Now we calculate the metro area totals for the population groups, and joining it back to the tract data:
