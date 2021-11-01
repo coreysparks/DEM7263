@@ -18,6 +18,7 @@ This lesson will cover the analysis of aggregate data in spatial demography. Oft
 
 ### Objectives
 This lesson has three objectives:
+
  1) Define and illustrate the use of the Generalized Linear regression model for aggregate count data
 
  2) Define and illustrate epidemiological analysis using the relative risk concept
@@ -35,7 +36,7 @@ knitr::opts_chunk$set( fig.width=9, fig.height=8)
 
 # Defining aggregate count data. 
 
-##Aggregate data
+## Aggregate data
 Data on areal units are very common in demographic research, and prior to the wide scale availability of individual-level microdata from surveys, were the standard data source available for demographic analysis. These are referred to as **_aggregate data_** because they represent the total number of events of a given type. For instance, the total number of deaths or total number of births. These are often not measured separately by other demographic characteristics, such as age, race or sex, although certain data sources do provide aggregate measures for specific demographic groups.
 
 Typically when we get data with a spatial component, they are aggregated to some geography examples of these are:
@@ -217,7 +218,7 @@ arf2018<-arf2018%>%
          rucc= as.factor(f0002013),
          hpsa10= as.factor(f0978710),
          obgyn10_pc= 1000*(f1168410/ f0453010) )%>%
-  select(births1416, lowbw1416,births0608, lowbw0608,state, cofips, coname, childpov10, rucc, hpsa10, obgyn10_pc)%>%
+ dplyr:: select(births1416, lowbw1416,births0608, lowbw0608,state, cofips, coname, childpov10, rucc, hpsa10, obgyn10_pc)%>%
   filter(complete.cases(.))%>%
   as.data.frame()
 
@@ -275,7 +276,7 @@ The model indicates that counties that are either partial or total shortage area
 arf2018sub<-filter(arf2018_m, is.na(lowbw1416)==F)
 
 
-fit_pois<- glm(lowbw1416 ~ offset(log(births1416)) + hpsa10, 
+fit_pois<- glm(lowbw1416 ~ offset(log(births1416+.00001)) + hpsa10, 
                family=poisson, 
                data=arf2018sub)
 summary(fit_pois)
@@ -455,7 +456,7 @@ The binomial model described earlier in the lesson can also be fit with the `glm
 
 ```{r}
 
-fit_bin<-glm(cbind(lowbw1416 , births1416)~  hpsa10, 
+fit_bin<-glm(lowbw1416~  hpsa10, weights = births1416,
                family=binomial, 
                data=arf2018sub)
 summary(fit_bin)
@@ -503,12 +504,14 @@ us.wt4<-nb2listw(nbs, style = "W")
 
 fitnb<-glm.nb(lowbw1416 ~ offset(log(E)) + hpsa10 + I(rucc%in%c("01", "02", "03"))+ childpov10,
            data=arf2018sub)
+
+summary(fitnb)
 fitnb$theta
 me.fit<-ME(lowbw1416 ~ offset(log(E)) + hpsa10 + I(rucc%in%c("01", "02", "03"))+ childpov10,
            data=arf2018sub,
            family=negative.binomial(74.75),
            listw = us.wt4,
-           verbose=T,alpha=.05 )
+           verbose=T,alpha=.1 )
 me.fit
 
 fits<-data.frame(fitted(me.fit))
@@ -567,6 +570,8 @@ arf2018sub$lag_rate<-lag.listw(x=us.wt4, var=(arf2018sub$lowbw1416/arf2018sub$bi
 
 fit.nb.auto<-glm.nb(lowbw1416 ~ offset(log(E)) +lag_rate+ hpsa10 + I(rucc%in%c("01", "02", "03"))+ childpov10, 
                      data=arf2018sub)
+
+lm.morantest(fit.nb.auto, listw=us.wt4)
 summary(fit.nb.auto)
 
 AIC(fitnb)
