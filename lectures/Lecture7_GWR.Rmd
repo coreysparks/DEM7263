@@ -1,0 +1,542 @@
+---
+title: "DEM 7263 Spatial Nonstationarity via Geographically Weighted Regression"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+---
+
+# Lesson Overview
+
+This lesson will introduce the concept of spatial stationarity and the use of **_spatial regimes_** to model spatial non-stationarity in an analysis. Spatial stationarity or non-stationarity is a useful methodological alternative to formal spatial modeling, when you can effectively split the data being analyzed into sub-groups of observations, and conduct your analysis separately on those groups.  We will then discuss the use of **_Geographically Weighted Regression_** to model spatial non-stationarity in an analysis. Compared to the **_spatial regimes model_**, Geographically Weighted Regression, or GWR, allows us to view stationarity in a continuous fashion, versus stratifying the analysis in a discrete manner, as we did using spatial regimes.    
+
+
+### Readings
+
+
+Shoff, C., Yang, T. C., & Matthews, S. A. (2012). What has geography got to do with it? Using GWR to explore place-specific associations with prenatal care utilization. GeoJournal, 77(3), 331-341. https://doi.org/10.1007/s10708-010-9405-3
+
+
+## Introduction to spatial stationarity and non-stationarity 
+
+**_Stationarity_** is a general term in statistics and math, and generally it refers to something that does not change over time or space. In demography the term has been used to describe the population implied by the life table, the **_stationary population_**, which stays the same size and is subject to constant rates of mortality. 
+
+In statistics and economics, data which constitute a **_time series_** can be stationary if the data show no long term positive or negative trend, such as this:
+
+```{r, echo=F, message=FALSE}
+x<-ts(rnorm(200),start = 1, end=200, frequency =1)
+dat<-data.frame(x=x, y=1:200)
+
+library(ggplot2); library(dplyr)
+dat%>%
+  ggplot(aes(x=y, y=x))+geom_point()+geom_smooth(col="red", method = "lm")+ylab("Value")+xlab("Time")
+
+
+```
+
+
+In spatial demography, and in statistical analysis that deals with data collected over space, we commonly assume that stationarity refers to the **_homogeneity_** of an effect, or, that the social/economic/health process that we are studying behaves the same way regardless of where you observe the process, or its spatial location, or the characteristics of the population of the place.
+
+
+In spatial statistical analysis, the latter is more often than not, assumed, and most statistical analysis that is taught only teaches the case where a single model is assumed to be equally valid for all locations in the data. In other words, we assume in our models that, our independent variable, *X*, affects or dependent variable, *Y*, the same way at all locations in our data. This is how traditional regression approaches work, and is an example of the stationarity assumption at work. 
+
+What if, however, we have a justifiable reason, or we are at least skeptical of the homogeneity of this model? This would imply that *X* affects *Y* in different ways, at different geographic locations, or in terms of the parameters of the model, we might be open to testing whether the relationship between *X* and *Y* is constant, or instead varies over space.
+
+
+## Approaches to spatial non-stationarity 
+
+When we wish to consider non-stationarity in an analysis, there are options at our disposal, and both are valuable, and both have been used widely in the literature. The two approaches we will describe in this course are the **_Spatial Regimes Model_** and the **_Geographically Weighted Regression Model_**. 
+
+These techniques are related, but come from different disciplinary traditions. The spatial regimes model comes from economics and the geographically weighted regression (GWR) strategy was developed in geography. This lesson addresses the spatial regimes model, and the next lesson addresses the GWR strategy. 
+
+
+First, we read the data into R from the web. And look at the summary of the variables
+
+```{r data prep}
+library(sf)
+library(spdep)
+library(dplyr)
+library(ggplot2)
+
+```
+
+# Geographically Weighted Regression Model Development 
+The Geographically Weighted Regression (GWR) model was first proposed by [Fotheringham, Charlton and Brunsdon, 1996](http://www.tandfonline.com/doi/abs/10.1080/02693799608902100?journalCode=tgis19#.Vi5PRRCrTdc) and [Brunsdon, Fotheringham and Charlton, 1996](https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1538-4632.1996.tb00936.x) as a way to model non-stationarity of a regression model over space. 
+
+It has been used widely in social science to investigate how social, economic and health outcomes can be examined over space. Generally, researchers use the GWR model to explore the possibility that the process they are studying is not accurately described by a **_global_** model, meaning a model that uses a single set of parameters to describe their outcome. Instead, the GWR model uses the spatial locations of the data to estimate **_local parameters_**, or parameters that are estimated for specific locations in the data to produce local regression models. 
+
+In their original description of the model, these authors list four reasons why the GWR model is advantageous compared to the regular linear regression model: 
+
+1.  It allows greater insights into the nature and accuracy of the data being examined 
+
+2.  It provides a more detailed understanding of the nature of relations and their variation over space
+
+3. It demonstrates the possible naivete of conventional approaches to data analysis that often ignore spatial non-stationarity 
+
+4. It allows a more detailed comparison of the relative performances of different types of analysis or different models.
+
+*Taken from [Fotheringham, Charlton and Brunsdon, 1996, p. 606](http://www.tandfonline.com/doi/abs/10.1080/02693799608902100?journalCode=tgis19#.Vi5PRRCrTdc)
+
+These points highlight important aspects of the GWR strategy, that is can be used to examine non-stationarity in a model and that it can be used to assess local model performance, or fit. These ideas are absent in the traditional linear regression modeling strategy.
+
+# GWR Model Specification 
+
+To understand how the GWR model works, we need to start with a basic linear regression model. With a single predictor the model would look like this:
+
+$$y_i = \beta_0 + \beta_1 x_{1i} + e_i$$
+
+This is the so called **_global model_** because there is only one $\beta_1$ parameter, and under the assumption of stationarity, this parameter describes the relationship between $x_1$ and $y$.
+
+The GWR model questions this idea, and instead specifies a model where the parameters of the model, $\beta_0$ and $\beta_1$ do not have a single globally correct value, but instead have unique values for all observations in the data. In other words, the regression models are **_locally_** estimated. 
+
+This is a unique type of analysis, and requires that we know the spatial locations of each of the observations in our data, which is not a problem for the data we are considering. Originally, the model was identified for point-locations, but the logic also works for polygon data as well, although polygons are typically represented by their centroids versus using the actual polygon in the analysis. 
+
+The spatial locations, given as the $x, y$ coordinates (or polygon centroids) of each observation, or the $i^{th}$ location, are used in the analysis. Specifically, the regression model from above now becomes:
+
+$$y_i = \beta_{0i} + \beta_{1i} x_{1i} + e_i$$
+
+Where each parameter is estimated for each of the $i$ locations in the data. This process of estimation constructs a **_trend surface_** of parameter values for each regression effect ($\beta$) and the model intercept ($\beta_0$).  Note, that the basic regression model from before is just a special case of the GWR model where the coefficients are constant over space.
+
+
+# GWR Model Estimation 
+
+## Weighted least squares
+
+Each of the parameters in the GWR are estimated by **_weighted least squares_**. This is very similar to how the ordinary linear regression model is estimated. Traditionally, the linear model parameters are estimated via **_least squares_**, where the parameters, or the least squares estimates of the parameters, represent the best solution that minimizes the residual squared error:
+
+$$S = \sum_i (y_i - (\hat \beta_0 + \hat \beta_1 x_1))^2$$
+
+Where the predicted value of each outcome, $y_i$ is given by the linear function of the predictors and the data: $(\hat \beta_0 + \hat \beta_1 x_1)$, where the $\text{^}$ notation signifies that these are estimates of the model parameters. 
+
+The solution to this equation, for the linear model, is a [closed-form equation](https://en.wikipedia.org/wiki/Linear_least_squares): 
+
+$$\hat \beta = (X'X)^{-1} X'y$$
+
+Where $X$ is the matrix of predictors, $X'$ is the matrix **_transpose_** of $X$ and $^{-1}$ is a matrix inverse operation. 
+
+In weighted least squares, the matrix equation above is replaced by:
+$$\hat \beta = (X'W_iX)^{-1} X'W_iy$$
+where the weighting matrix, $W_i$ is included. If all weights in the $W_i$ matrix are 1, then the two equations are the same. 
+
+The role of the weight matrix is to give more greater weight to observations that are close to a particular observation, $i$. It is assumed that observations that are close will influence each other more than those that are far away.
+
+This is NOT the same W matrix as was used in the Moran's I calculation!
+
+W is generally constructed based on the distances between locations. If we have two locations, $i$ and $j$, then $d_{ij}$ is the **_Euclidean Distance_** between them.  Brunsdson, Charlton, and Fotheringham (1996) used  a **_kernel-density_** approach to capture the weight between observations:
+
+$$w_{ij} = exp(- \frac{1}{2}(d_{ij}/b)^2)$$
+
+where $b$ is the *bandwidth* parameter, which defines the limit or threshold distance, and it must be estimated. Under this weighting scheme, the weight for points that exactly co-occur will be 1 and for those that are the distance $d_{ij}$ apart, the weight will decrease as a Gaussian curve as $d_{ij}$ increases.
+
+The figure below, from Fotheringham, Brunsdon and Charlton (2002) shows how these kernel functions weight the information from locations in the data.
+
+![GWR Kernels](C:/Users/ozd504/OneDrive - University of Texas at San Antonio/classes/dem7263/gwr2.png)
+
+# GWR Modeling - Kernel functions 
+There are several ways to construct these kernel functions, and the authors of the method go into detail in their 2002 book, *Geographically Weighted Regression*. 
+
+Not only are there several types of kernels to choose from, but there are different ways to choose the bandwidth parameter, which the kernel functions depend upon. 
+
+## Cross-validation 
+Most programs that do GWR analysis use a cross-validation method to choose the optimal kernel bandwidth. The cross validation method takes the form:
+
+$$CV = \Sigma_i \left[y_i - \hat y_{\neq i} (\beta) \right ]^2$$
+
+Where $\hat y_{\neq i} (\beta)$ is the fitted value at location $i$ with the observations for point $i$ omitted from the calibration process.  This in effect minimizes the sum of squared errors at all locations $i$, and arrives at an optimal bandwidth.
+
+## AIC selection
+The cross-validation method was initially proposed as the best way to find the bandwidth parameter. We have seen the AIC criteria before, and it is used to pick the best fitting, more parsimonious model, among a set of models. It is also available in the GWR setting as a relative model selection tool for finding the bandwidth parameter. 
+
+### Fixed kernels
+As seen in the figure above, there are two strategies for kernel functions in GWR. The first is the **_fixed bandwidth kernel_**. This type of kernel function uses a constant distance to weight points surrounding each observation and weights the contribution of each point using the weight function. When data are evenly spaced, this fixed bandwidth is a good option, but when data are unevenly space, so each point is not surrounded by equal numbers of observations within the search radius, then this approach is less ideal, because some observations will have fewer observations to estimate the model than others. 
+
+As an alternative, when data are inconsistently space, there is a second kernel method for GWR. 
+
+### Adaptive kernels
+The **_adaptive bandwidth kernel_** is more ideal when data are unevenly spaced. Instead of using a fixed radius for including observations, this method instead estimates a proportion of observations that are used for the model calibration at each point. This is akin to the k-nearest neighbor methods we have seen before, where each observation always uses the closest $p$ observations, where $p$ is a proportion of the total sample. 
+
+This ensures that data that are unevenly spaced do not have biased calibration models that include too few observations in the model estimation at each point. 
+
+
+### GWR Modeling 
+The advantage of GWR is that we can visualize the difference in the covariate effects as a continuous surface. There are a few steps to fitting the GWR model. First we need to select a bandwidth for the weighting algorithm. 
+
+This process involves two steps. First, you must select the bandwidth parameter for the kernel function by minimizing the cross-validation score for the model you want to fit. In R this is done with the `gwr.sel()` function in the `spgwr` library.  Next, you plug the estimated bandwidth into the model and estimate the GWR model. 
+
+This is an example using the same data from Lesson 8.
+
+```{r data prep2, results='hide'}
+library(sf)
+library(spdep)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+
+#load the data
+dataurl<-"https://github.com/coreysparks/data/blob/master/uscounty_data.Rdata?raw=true"
+load(url(dataurl))
+
+
+#Filter complete cases
+usco<- usco%>%
+  filter(complete.cases(Age.Adjusted.Rate, medhouseval), 
+         state %in% c("01","05", "12", "13", "21", "22",  "28", "37", "45", "47", "48", "51"))
+
+usco <- st_transform(usco, crs = 2163)
+#Create the metro/nonmetro variable used in Lesson 8.
+usco$metro_cut<-cut(as.numeric(usco$rucc),
+                    breaks =c(0,3,9),
+                    include.lowest = T,
+                    labels = c("Metropolitan", "Non-Metropolitan"))
+
+
+coords<-st_coordinates(st_centroid(usco))[, 1:2]
+
+#Create spatial polygon data frame
+usco<-as(usco, "Spatial")
+
+
+#States for plotting
+options(tigris_class = "sf")
+sts<- tigris::states(cb=T, year = 2010 )
+sts<- st_boundary(sts)%>%st_transform(crs = 2163)%>%
+  filter(STATE%in%c("01","05", "12", "13", "21", "22",  "28", "37", "45", "47", "48", "51"))
+```
+
+The first step is to estimate the bandwidth for use in the model. To do this, we specify the model we wish to use in terms of the outcome variable and the predictors, and the dataset. The `gwr.sel()` function then finds the optimal bandwidth for this model.  **Note, this may take some time**
+ 
+As the function works, we see output in our R session, which shows the bandwidths and the cross-validation score. You can see that the bandwidth starts large and decreases as the CV score decreases. After some iterations, the function finds the optimal bandwidth. We could also use the AIC selection method, by specifying `method="aic"` in the `gwr.sel()` function. 
+
+```{r, results='hide'}
+library(parallel)
+library(spgwr)
+library(GWmodel)
+
+gwr.b.f<-gwr.sel(scale(Age.Adjusted.Rate)~metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),#coords = coords,
+                 adapt = F,
+                 data=usco)
+
+gwr.b.f
+
+
+```
+
+We see the estimated bandwidth is `r gwr.b.f/1000` kilometers. This means that, in order to estimate the model, each county will use data from other counties that are **_up to_** `r gwr.b.f/1000` km away from it.
+
+
+
+# GWR Modeling: Model Estimation 
+
+Next, you plug in the bandwidth into the `gwr()` modeling function to estimate the model. The `gwr()` function can use your computer hardware better if you set up a local computing cluster, which will use all the computing cores on your local computer. This is optional, but will run the model faster.
+
+The output from this analysis is complex. Instead of a single set of regression coefficients like we might get from a `lm()` model, this procedure generates a regression model for each observation in the data. This is the whole point to the GWR model: we want to explore *local* versus *global* models. 
+
+The `gwr()` function returns a *SpatialPolygonDataFrame* object. This is one way R stores shapefiles. This means that we can map the models for each county in our analysis, and typically this is what is done when interpreting GWR models. 
+
+For example, Shoff, Yand and Matthews (2012) map the coefficients of their GWR model to illustrate where significant associations exist between their predictors and their outcome.
+
+The basic model summary presents the quantiles for each regression parameter, and the estimate from the global linear model. This is the **Global** column in the output. 
+
+```{r}
+
+#cl<- makeCluster(parallel::detectCores()) #optional but faster
+
+
+fit<-gwr(scale(Age.Adjusted.Rate)~metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
+        se.fit = T,
+        hatmatrix = T,
+        bandwidth = gwr.b.f,
+       # cl = cl, #optional but faster
+        data=usco)
+
+fit
+```
+
+Examining the basic output, we see a wide range of values for all the regression effects. For instance, the `ppov` variables has a range of -0.56 to 0.69, meaning that in some counties the effect of poverty decreases mortality, while in others it increases. In fact, all regression effects show this negative to positive range in this analysis, suggesting that there is a lot of variation at the local level in the regression model. 
+
+
+
+### Mapping coefficients
+As mentioned before in this lesson, one way to examine GWR model output is to visualize it with a map. Since the output is a *SpatialPolygonDataFrame* object, we first convert the output to a simple feature then use ggplot to map it. Below is the map of the coefficient for the population density parameter. We map the output using the quantiles of the parameter and using a [viridis](https://cran.r-project.org/web/packages/viridis/vignettes/intro-to-viridis.html) color scheme.
+
+In this analysis, we see areas of the US where population density is positively associated with mortality (meaning that as density increases, so does mortality), and areas where the association is negative (meaning as density increases, mortality declines). For instance, the south-central area of the country typically as a negative association, while the north central, and eastern seaboard have positive associations. 
+
+
+```{r}
+gwr.out<-st_as_sf(fit$SDF) #convert to simple features
+
+gwr.out%>%
+  mutate(popden=cut(scale.popdensity.,
+                    breaks = quantile(gwr.out$scale.popdensity.,
+                                      p=seq(0,1, length.out = 9)),
+                    include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=popden, group=popden),
+          color=NA)+
+  coord_sf(crs = 2163)+
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  geom_sf(data=sts, color="black")+
+  guides(fill=guide_legend(title="Parameter Estimate"))+
+  ggtitle(label = "Map of Population Density Regression Parameter from GWR Model", 
+          subtitle = " Fixed Bandwidth")
+
+
+```
+
+In the GWR model, you can make maps of all the parameters as well as the model fit. The GWR model calculates the model fit, or $R^2$ for each observation. This allows us to examine how well the model is explaining the variation in the outcome for each observation. 
+
+Below we map the model $R^2$ from the model fit. In this map, we see that the model is not fitting as well (lowest $R^2$ values) in the southern  and central areas of the country, while it is fitting best (higher $R^2$ values) in the western area of the country. 
+
+```{r}
+gwr.out%>%
+  mutate(rsq=cut(localR2, breaks = quantile(gwr.out$localR2,
+                                            p=seq(0,1, length.out = 9)),
+                 include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=rsq, group=rsq),
+          color=NA)+
+    scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  guides(fill=guide_legend(title="Model Fit"))+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  ggtitle(label = "Local Model R2 from GWR Model")
+
+
+```
+
+# GWR Modeling - Local test statistics 
+
+We just saw how to create maps from GWR model output, but in these maps, we were not concerned with statistical significance of the model parameters. In all likelihood, the relationships in these models are not **always** significant at all places, and in some places they could be significantly positive and in other places significantly negative. 
+
+In order to address this, we must calculate local **_t-statistics_** for the model parameters. You may recall t-statistics are how we interpret statistical significance of regression model parameters. They are the ratio of the estimated model $\beta$'s to the standard errors, or:
+$$t = \frac{\beta}{s.e.(\beta)}$$
+
+We have to calculate these for each parameter we want to map and in order to do so, we must specify to R that we want to estimate the local standard errors for each county in our analysis. We can use the cutoff of if a $t$ value is less than 1.96, then it is not considered significant. 
+
+
+We see in the map below, that the effect of population density is only significant in a few small areas of the country. If you recall from Lesson 8, the density effect was only significant in the non-metro regime of our analysis. In the present map, density is significantly positively associated with mortality in areas on the east coast, and negatively associated with mortality in a few pockets of counties in the south and north-central US. 
+
+```{r}
+gwr.out%>%
+  mutate(dens_t = ifelse(abs(scale.popdensity./scale.popdensity._se)<1.96, NA,scale.popdensity./scale.popdensity._se)) %>%
+  mutate(dens_t_cut=cut(dens_t, breaks = quantile(dens_t,
+                                                  p=seq(0,1, length.out = 9)
+                                                  , na.rm=T), include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=dens_t_cut, group=dens_t_cut), color=NA)+
+  scale_colour_viridis_d(na.value="white")+
+  scale_fill_viridis_d(na.value="white")+
+  guides(fill=guide_legend(title="t-value"))+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  ggtitle(label = "Local t statistics for Population Density Effect from GWR Model",
+          subtitle = 
+            "Fixed Kernel - NA is Not Sigificant")
+
+```
+
+# GWR Modelig - Adaptive Kernel Model 
+
+In this data example, and depending on where in the country a county is, the relative distances between counties can vary substantially. For example, in the eastern US, counties are relatively closer together than they are in the western US. This makes a good case for the use of the adaptive kernel method described earlier. 
+
+In order to do this in R, we use the `gwr.sel()` function again, this time with the `adapt=T` argument, which tells R to estimate the adaptive kernel. 
+
+```{r}
+gwr.b.a<-gwr.sel(scale(Age.Adjusted.Rate)~metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
+                 adapt = T,
+                 data=usco)
+
+gwr.b.a
+
+```
+
+Which shows us that, for each point the `gwr()` function will use the closest `r 100*gwr.b.a`% of observations. This equates to using `r gwr.b.a*dim(usco@data)[1]` counties for the calibration for any particular county. 
+
+Next, we plug in the adaptive bandwidth into the `gwr()` estimation function. 
+
+```{r}
+fit.a<-gwr(scale(Age.Adjusted.Rate)~metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
+        se.fit = T,
+        hatmatrix = T,
+        adapt= gwr.b.a,
+       # cl = cl, #optional but faster
+        data=usco)
+
+fit.a
+
+```
+
+We see similar results, in terms of the ranges for the parameters, as we saw using the fixed bandwidth kernel. 
+
+When we map the coefficients, they geographic representation from the adaptive kernel generally is much more localized than for the fixed bandwidth method. 
+
+The same three maps from the fixed bandwidth model are reproduced below, for reference. In general, the same areas emerge, if any distinction appears, it's that the southwest now has a significant effect of population density on mortality that was not present using the fixed bandwidth. 
+
+```{r}
+gwr.out.a<-st_as_sf(fit.a$SDF) #convert to simple features
+
+gwr.out.a%>%
+  mutate(popden=cut(scale.popdensity.,
+                    breaks = quantile(gwr.out.a$scale.popdensity.,
+                                      p=seq(0,1, length.out = 9)),
+                    include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=popden, group=popden),
+          color=NA)+
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  guides(fill=guide_legend(title="Parameter Estimate"))+
+  ggtitle(label = "Map of Population Density Regression Parameter from GWR Model", subtitle = " Adaptive Bandwidth")
+
+```
+
+```{r}
+gwr.out.a%>%
+  mutate(rsq=cut(localR2, breaks = quantile(gwr.out.a$localR2, p=seq(0,1, length.out = 9)), include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=rsq, group=rsq), color=NA)+
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  guides(fill=guide_legend(title="Model Fit"))+
+  ggtitle(label = "Local Model R2 from GWR Model", subtitle="Adaptive Bandwidth")
+```
+
+```{r}
+
+gwr.out.a%>%
+  mutate(dens_t = ifelse(abs(scale.popdensity./scale.popdensity._se)<1.96, NA,scale.popdensity./scale.popdensity._se)) %>%
+  mutate(dens_t_cut=cut(dens_t,
+                        breaks = quantile(dens_t,
+                                          p=seq(0,1, length.out = 9), na.rm=T),
+                        include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=dens_t_cut, group=dens_t_cut),
+          color=NA)+
+  scale_colour_viridis_d(na.value="white")+
+  scale_fill_viridis_d(na.value="white")+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  guides(fill=guide_legend(title="t-value"))+
+  ggtitle(label = "Local t statistics for Population Density Effect from GWR Model",
+          subtitle = 
+            "Adaptive Kernel - NA is Not Sigificant")
+
+```
+
+
+# GWR Modeling - Statistical Justification of Modelling Non-Stationarity 
+
+One big question that we must ask when we conduct a GWR analysis is: "Is it worth it?" Simply put, does the GWR model add more to our understanding of our analysis than the linear model does? The authors of the method described conducting a test comparing the residual variance from the regular linear model to the residual variance from the GWR model. This, and other tests of this type, are available in the `spgwr` package. 
+
+Here is the F-test comparing the OLS model to the GWR model. In this case, the test is highly significant, indicating that the GWR model fits the data much better than the global model does. 
+
+```{r}
+BFC02.gwr.test(fit)
+
+```
+
+There are other tests proposed by Leung et al (2000) which also test for non-stationarity in each regression effect. Basically, this tells you if each regression term is constant over space. This is very useful for examining which effect are consistent across space versus those that change. *NOTE: This test can take really long time to do if your data are large.*
+
+In this case, all parameters show significant non-stationarity in their effects, except for the `pblack` variable.
+
+```{r}
+LMZ.F3GWR.test(fit)
+
+```
+
+
+## Generalized GWR
+Recent additions to the GWR model have included extending it to Poisson and Binomial models from the GLM approach. Below is an example of using the `GWmodel` package to estimate a geographically - weighted poisson regression using a fixed bandwidth approach
+
+```{r, results='hide'}
+bw1<-bw.ggwr(Deaths ~ offset(log(Population))+metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(medhouseval),
+             family="poisson",
+             adaptive=FALSE,
+             approach ="CV",
+             data=usco)
+bw1
+```
+
+```{r}
+
+pois.gwr <- ggwr.basic(Deaths ~ offset(log(Population))+metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(medhouseval),
+             family="poisson",
+             bw = bw1,
+             data=usco)
+
+pois.gwr
+
+pgwr<- st_as_sf(pois.gwr$SDF)
+
+pgwr%>%
+  #mutate(dens_t = ifelse(abs(scale.popdensity./scale.popdensity._se)<1.96, NA,scale.popdensity./scale.popdensity._se)) %>%
+   mutate(mhv = `scale(medhouseval)`)%>%
+  #                       breaks = quantile(dens_t,
+  #                                         p=seq(0,1, length.out = 9), na.rm=T),
+  #                       include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=mhv))+
+  scale_fill_viridis_c()+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  guides(fill=guide_legend(title="beta"))+
+  ggtitle(label = "Local Parameter of Med. Home Value Poisson GWR Model")
+
+pgwr%>%
+  #mutate(dens_t = ifelse(abs(scale.popdensity./scale.popdensity._se)<1.96, NA,scale.popdensity./scale.popdensity._se)) %>%
+   mutate(mhvt = `scale(medhouseval)` / `scale(medhouseval)_SE`)%>%
+  #                       breaks = quantile(dens_t,
+  #                                         p=seq(0,1, length.out = 9), na.rm=T),
+  #                       include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes( fill=mhvt))+
+  scale_fill_viridis_c()+
+  geom_sf(data=sts, color="black")+
+  coord_sf(crs = 2163)+
+  guides(fill=guide_legend(title="beta"))+
+  ggtitle(label = "Local t-statistic of Med. Home Value Poisson GWR Model")
+
+```
+
+
+
+# Lesson wrap up 
+
+In this lesson, we considered the Geographically Weighted Regression (GWR) model. 
+
+GWR is a very useful method for exploring the potential for non-stationarity in a regression model. Unlike the spatial regimes method, the GWR method allows us to map and visualize the regression coefficients, which adds to the interpretability of the method. Moreover, the GWR method allows for a more *continuous* type of non-stationarity versus the discrete stratification used in the spatial regimes model. 
+
+That being said, the GWR model has been criticized in the literature for its statistical properties (Griffith, 2008; Wheeler and Páez, 2010; Wheeler and Tiefelsdorf 2005) and these criticisms have great basis in reality. GWR is not an optimal statistical model, in fact, when loading the `spgwr` library, you see the message:
+
+![""](C:/Users/ozd504//OneDrive - University of Texas at San Antonio/classes/SOC 579 - Spatial Demography/SOC 579 Course Content/Lesson 09/badgwr.png)
+
+Which reiterates these concerns from the literature. 
+
+In consensus, GWR is viewed not as a model that has ultimate statistical authority for a process, but one which can inform the non-stationarity of the process under study, and researchers are urged to not rely on it for valid statistical prediction or inference, but instead as another *Exploratory Spatial Data Analysis* technique, similar to Moran's I or local Moran's I. 
+
+
+# References
+
+Fotheringham, A. S., Brunsdon, C., & Charlton, M. (2002). Geographically weighted regression : the analysis of spatially varying relationships. Wiley. Retrieved from https://www.wiley.com/en-us/Geographically+Weighted+Regression%3A+The+Analysis+of+Spatially+Varying+Relationships+-p-9780471496168
+
+Griffith, D. A. (2008). Spatial-filtering-based contributions to a critique of geographically weighted regression (GWR). Environment and Planning A, 40(11), 2751-2769. https://doi.org/10.1068/a38218
+
+Matthews, S. A., & Yang, T.-C. (2012). Mapping the results of local statistics: Using geographically weighted regression. Demographic Research, 26, 151-166. https://doi.org/10.4054/DemRes.2012.26.6
+
+Shoff, C., Yang, T. C., & Matthews, S. a. (2012). What has geography got to do with it? Using GWR to explore place-specific associations with prenatal care utilization. GeoJournal, 77(3), 331-341. https://doi.org/10.1007/s10708-010-9405-3
+
+Wheeler, D. C., & Páez, A. (2010). Geographically Weighted Regression. In Handbook of Applied Spatial Analysis (pp. 461-486). Berlin, Heidelberg: Springer Berlin Heidelberg. https://doi.org/10.1007/978-3-642-03647-7_22
+
+Wheeler, D., & Tiefelsdorf, M. (2005). Multicollinearity and correlation among local regression coefficients in geographically weighted regression. Journal of Geographical Systems, 7(2), 161-187. https://doi.org/10.1007/s10109-005-0155-6
