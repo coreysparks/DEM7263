@@ -12,7 +12,7 @@ output:
     code_download: true
 ---
 
-# Lesson Overview
+# Lesson Overview   
 
 This lesson will introduce the concept of spatial stationarity and the use of **_spatial regimes_** to model spatial non-stationarity in an analysis. Spatial stationarity or non-stationarity is a useful methodological alternative to formal spatial modeling, when you can effectively split the data being analyzed into sub-groups of observations, and conduct your analysis separately on those groups.  We will then discuss the use of **_Geographically Weighted Regression_** to model spatial non-stationarity in an analysis. Compared to the **_spatial regimes model_**, Geographically Weighted Regression, or GWR, allows us to view stationarity in a continuous fashion, versus stratifying the analysis in a discrete manner, as we did using spatial regimes.    
 
