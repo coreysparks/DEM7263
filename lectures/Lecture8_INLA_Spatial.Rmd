@@ -45,10 +45,12 @@ library(tidyverse)
 ### Data
 I have the data on my github site under the [nhgis_vs](https://github.com/coreysparks/data/tree/master/nhgis_vs) page. These are data from the [NHGIS](https://www.nhgis.org/) project by [IPUMS](https://www.ipums.org/) who started providing birth and death data from the US Vital statistics program. 
 
-The data we will use here are infant mortality rates in US counties between 2000 and 2007. 
+The data we will use here are infant mortality rates in US counties between 2001 and 2007. 
 
 ```{r load data, message=FALSE, warning=FALSE}
-files<-list.files("~/OneDrive - University of Texas at San Antonio//classes/dem7263/class21_7263/data/nhgis0022_csv/nhgis0022_csv/", pattern = "*.csv", full.names = T)
+files<-list.files("~/OneDrive - University of Texas at San Antonio//classes/dem7263/class21_7263/data/nhgis0029_csv/",
+                  pattern = "*.csv",
+                  full.names = T)
 # vital<-lapply(files, 
 #               read.csv, 
 #               header=T)
@@ -66,9 +68,10 @@ df$cofips<-paste(substr(df$GISJOIN, 2,3),
 
 df<-df%>%
  # filter(YEAR %in%2000:2007)%>%
-  mutate(rate=as.numeric(AGWJ001) )%>%
+  mutate(deaths=as.numeric(AGWI001),
+         births = as.numeric(AGWE001))%>%
   arrange(cofips)%>%
-  select(cofips,rate)
+  select(cofips,deaths,births)
 
 head(df)
 
@@ -107,7 +110,7 @@ In count data models, and spatial epidemiology, we have to express the raw count
 #ratesyr$E<-ratesyr$rate
 #final.dat<-merge(final.dat, ratesyr[,-2], by="year")
 #rates<-aggregate(rate~1, final.dat, mean)
-final.dat$E_d<-mean(final.dat$rate)
+final.dat$E_d<-final.dat$births*(sum(final.dat$deaths)/sum(final.dat$births))
 
 final.dat<-final.dat[order(final.dat$cofips),]
 final.dat$id<-1:dim(final.dat)[1]
@@ -127,6 +130,8 @@ us_co<-us_co%>%
 ```
 
 ## Construction of spatial relationships:
+
+Key part here is to make numeric identifier for each geography!
 
 ```{r}
 #In INLA, we don't need FIPS codes, we need a simple numeric index for our counties
@@ -173,13 +178,13 @@ final.dat<-final.dat[order(final.dat$cofips),]
 - In addition to various zero-inflated versions of these data.
 
 ```{r}
-ggplot(data = final.dat)+geom_histogram(aes(x =log(rate) ,
+ggplot(data = final.dat)+geom_histogram(aes(x =log(births/deaths) ,
                                             y=0.5*..density..))+
   #facet_wrap(~year)+
   ggtitle(label = "Distribution of Infant Mortality Rate by Year",
           subtitle = "US Counties, 2000")
 
-ggplot(data = final.dat)+geom_histogram(aes(x =log(rate/E_d) ,
+ggplot(data = final.dat)+geom_histogram(aes(x =deaths/E_d ,
                                             y=0.5*..density..))+
   #facet_wrap(~year)+
   ggtitle(label = "Distribution of Infant Mortality Relative Risk by Year", 
@@ -198,8 +203,8 @@ sts<- states(cb=T)%>%
 ```{r}
 final.dat%>%
   #filter(year%in%c(2000))%>%
-  mutate(qrr=cut(I(rate/E_d), 
-                 breaks = quantile(I(rate/E_d),
+  mutate(qrr=cut(I(deaths/E_d), 
+                 breaks = quantile(I(deaths/E_d),
                                    p=seq(0,1,length.out = 5)),
                  include.lowest = T))%>%
   ggplot()+
@@ -225,7 +230,7 @@ INLA will use vague Normal priors for the $\beta$'s, and we have not other param
 
 ```{r}
 #Model specification:
-f1<-rate~scale(pblack)+scale(phisp)+scale(ppov)
+f1<-deaths~scale(pblack)+scale(phisp)+scale(ppov)
 
 #Model fit
 mod1<-inla(formula = f1,data = final.dat, #linear predictor - fixed effects
@@ -253,7 +258,7 @@ where $\tau_u$ here is the precision, not the variance and **precision = 1/varia
 INLA puts a log-gamma prior on the the precision by default.
 
 ```{r}
-f2<-rate~scale(pblack)+scale(phisp)+scale(ppov)+ #fixed effects
+f2<-deaths~scale(pblack)+scale(phisp)+scale(ppov)+ #fixed effects
   f(struct, model = "iid")  #random effects
 
 mod2<-inla(formula = f2,
@@ -283,7 +288,7 @@ inla.hpdmarginal(.95, marginal=m2)
 plot(m2,
      type="l",
      main=c("Posterior distibution for between county variance", "- IID model -"), 
-     xlim=c(0, 6))
+     xlim=c(0, .5))
 
 ```
 
@@ -315,7 +320,7 @@ final.dat%>%
 
 ### BYM Model
 Model with spatial correlation - Besag, York, and Mollie (1991) model 
-$$\text{Deaths_ij} = \text{log(E_d)} + X' \beta + u_j + v_j $$
+$$\text{Deaths}_{ij} = \text{log(E_d)} + X' \beta + u_j + v_j $$
 Which has two random effects, one an IID random effect and the second a spatially correlated random effect, specified as a  conditionally auto-regressive prior for the $v_j$'s. This is the Besag model:
 
 $$v_j|v_{\neq j},\sim\text{Normal}(\frac{1}{n_i}\sum_{i\sim j}v_j,\frac{1}{n_i\tau})$$
@@ -325,7 +330,7 @@ For the BYM model we must specify the spatial connectivity matrix in the random 
 
 ```{r}
 
-f3<-rate~scale(pblack)+scale(phisp)+scale(ppov)+
+f3<-deaths~scale(pblack)+scale(phisp)+scale(ppov)+
   f(struct, model = "bym",scale.model = T, constr = T, graph = H)
 
 mod3<-inla(formula = f3,data = final.dat,
@@ -352,6 +357,21 @@ mod3$waic$waic
 ```
 Looks like the spatial is better in this case. 
 
+#### Regression effect posterior distributions
+If we want to get the 95% credible interval for a risk ratio $exp(\beta)$, we can do so using the `inla.emarginal()` and `inla.tmarginal()` functions
+```{r}
+
+b1 <- inla.emarginal(exp, mod2$marginals.fixed[[2]])
+b1 #Posterior mean
+
+b1ci <-inla.qmarginal(c(.025, .975), 
+                      inla.tmarginal(exp, mod2$marginals.fixed[[2]]))
+b1ci
+```
+And we see that the `pblack` effect increases the infant mortality risk by `r round(b1-1, 2)`%
+
+
+
 #### Hyper parameter distributions
 
 Green line is spatial variation, black line is nonspatial variation
@@ -366,7 +386,7 @@ m3b<- inla.tmarginal(
 
 plot(m3a, type="l",
      main=c("Posterior distibution for between county variance", "- BYM model -"),
-     xlim=c(0, 6))
+     xlim=c(0, .2)) # you may need to change this
 #lines(m3b, col="red")
 lines(m3b, col="green")
 ```
@@ -427,7 +447,24 @@ us_co%>%
   coord_sf(crs = 2163)
 
 ```
+IID random effect
 
+```{r}
+us_co$i_re<-mod3$summary.random$struct$mean[1:3108]
+us_co%>%
+  mutate(qse=cut(i_re, 
+                 breaks = quantile(i_re, p=seq(0,1,length.out = 6)),
+                 include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes(fill=qse, color=NA))+
+  geom_sf(data=sts)+
+  scale_colour_brewer(palette = "RdBu" )+
+  scale_fill_brewer(palette = "RdBu", na.value="grey")+
+  guides(fill=guide_legend(title="Spatial Excess Risk"))+
+  ggtitle(label="Unstructured Random Effect - BYM Model")+
+  coord_sf(crs = 2163)
+
+```
 
 ## Exceedence probabilities
 In Bayesian spatial models that are centered on an epidemiological type of outcome, it is common to examine the data for spatial clustering. One way to do this is to examine the clustering in the relative risk from one of these GLMM models. For instance if $\theta$ is the relative risk $$\theta = exp(\beta_0 + \beta_1*x_1 + u_j)$$ from one of our Negative binomial models above. We can use the posterior marginals of the relative risk to ask $\theta \gt \theta^*$ where $\theta^*$ is a specific level of excess risk, say 50% extra or $\theta > 1.5$. If the density, or $\text{Pr}(\theta \gt \theta^*)$ is high, then there is evidence that the excess risk is not only high, but **significantly** high. 
@@ -459,7 +496,7 @@ final.dat%>%
   scale_colour_brewer(palette = "Blues" )+
   scale_fill_brewer(palette = "Blues", na.value="grey")+
   guides(fill=guide_legend(title=""))+
-  ggtitle(label=expression(paste("Exceedence Probability Relative Risk ","Pr( ",theta," >1.25"," )  - 2000") ))+
+  ggtitle(label=expression(paste("Exceedence Probability Relative Risk ","Pr( ",theta," >1.5"," )  - 2000") ))+
   coord_sf(crs = 2163)
   
 #map1<-final.dat%>%
@@ -506,7 +543,7 @@ prec.prior <- list(prec.unstruct = list(prior = "logtgaussian", param = c(0.2, 1
                    prec.spatial = list(prior = "logtgaussian", param = c(0.2, 1)))
 
 
-f4<-rate~scale(pblack)+scale(phisp)+scale(ppov)+
+f4<-deaths~scale(pblack)+scale(phisp)+scale(ppov)+
   f(struct, model = "bym",scale.model = T, constr = T, graph = H,
     hyper = prec.prior)
 
@@ -535,7 +572,7 @@ m4b<- inla.tmarginal(
 
 plot(m3a, type="l",
      main=c("Posterior distibution for between county variance", "- BYM model -"),
-     xlim=c(0, 6))
+     xlim=c(0, .2))
 #lines(m3b, col="red")
 lines(m3b, col="green")
 lines(m4a, col="black", lty=2)# modified prior for IID
@@ -544,6 +581,36 @@ lines(m4b, col="green", lty=2)# modified prior for spatial
 
 ```
 
+
+## Zero inflation
+Often in count data when the outcome is rare, we can have more zeros present in the data than (expecially) the Poisson distribution will allow. In this case, a zero-inflated model can be used. A zero-inflated model splits the model into two components. The first component models the extra 0's in the data while the second component models the count outcome. 
+
+
+$Pr(y_i) =\pi_0 I(y_i=0) + (1-\pi_0)\frac{exp(-\lambda_i)\lambda_i^{y_i}}{y_i!} $
+
+```{r}
+
+ f5<-deaths~scale(pblack)+scale(phisp)+scale(ppov)+
+  f(struct, model = "bym",scale.model = T, constr = T, graph = H)
+
+mod5<-inla(formula = f5,data = final.dat,
+           family = "zeroinflatedpoisson0",
+           E = E_d, 
+           control.compute = list(waic=T,return.marginals.predictor=TRUE), 
+           control.predictor = list(link=1), 
+           num.threads = 3, 
+               verbose = F)
+
+#total model summary
+summary(mod5)
+
+mod5$waic$waic
+mod4$waic$waic
+
+
+```
+
+In this case, the zero inflation model does not improve up on the Poisson.
 
 ## References
 Besag, J., York, J., & Mollie, a. (1991). Bayesian image-restoration, with 2 applications in spatial statistics. Annals of the Institute of Statistical Mathematics, 43(1), 1-20. https://doi.org/10.1007/BF00116466
