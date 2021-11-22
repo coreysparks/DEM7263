@@ -1,0 +1,549 @@
+---
+title: "DEM 7263 - Spatial GLMM(s) using the INLA Approximation"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+---
+
+## The INLA Approach to Bayesian models
+The Integrated Nested Laplace Approximation, or INLA, approach is a recently developed, computationally simpler method for fitting Bayesian models [(Rue et al., [2009](http://onlinelibrary.wiley.com/store/10.1111/j.1467-9868.2008.00700.x/asset/j.1467-9868.2008.00700.x.pdf?v=1&t=ih5b86ev&s=9078c3b0adb48d4c15bc49ae3ededc6d1cd684c5), compared to traditional Markov Chain Monte Carlo (MCMC) approaches. INLA fits models that are classified as latent Gaussian models, which are applicable in many settings (Martino & Rue, [2010](http://www.bias-project.org.uk/gmrfcourse/inla-program.pdf).  In general, INLA fits a general form of additive models such as:
+
+$\eta = \alpha + \sum_{j=1}^{nf} f^{(j)}(u_{ij}) + \sum_{k=1}^{n\beta}\beta_k z_{ki} + \epsilon_i$
+
+where $\eta$ is the linear predictor for a generalized linear model formula, and is composed of a linear function of some variables u, $\beta$ are the effects  of covariates, z, and $\epsilon$ is an unstructured residual (Rue et al., 2009). As this model is often parameterized as a Bayesian one, we are interested in the posterior marginal distributions of all the model parameters. Rue and Martino [(2007)](http://www.sciencedirect.com/science/article/pii/S0378375807000845) show that the posterior marginal for the random effects (x) in such models can be approximated as:
+
+$\tilde{p}(x_i|y) = \sum_k \tilde{p}(x_i|\theta_k, y) \tilde{p}(\theta_k|y) \Delta_k$
+
+via numerical integration (Rue & Martino, 2007; Schrodle & Held, [2011a](http://onlinelibrary.wiley.com/doi/10.1002/env.1065/full), [2011b](http://link.springer.com/article/10.1007/s00180-010-0208-2)). The posterior distribution of the hyperparameters ($\theta$) of the model can also be approximated as:
+
+$\tilde{p}(\theta | y)) \propto \frac{p(x, \theta, y)}{\tilde{p}G(x| \theta,y)} \mid _{x} = x^*(\theta)$
+
+, where G is a Gaussian approximation of the posterior and $x^*(\theta)$ is the mode of the conditional distribution of $p(x|\theta,y)$. Thus, instead of using MCMC to find an iterative, sampling-based estimate of the posterior, it is arrived at numerically. This method of fitting the spatial models specified above has been presented by numerous authors (Blangiardo & Cameletti, [2015](https://books.google.com/books?hl=en&lr=&id=--HuBgAAQBAJ&oi=fnd&pg=PA259&dq=Blangiardo+%26+Cameletti,+2015&ots=VSDEJ7wfM2&sig=graudrEKTevK2HR7nozmZ-Y5N0Q#v=onepage&q=Blangiardo%20%26%20Cameletti%2C%202015&f=false); Blangiardo et al., [2013](http://www.sciencedirect.com/science/article/pii/S1877584513000336); Lindgren & Rue, [2015](http://www.sciencedirect.com/science/article/pii/S2211675315000780); Martins et al., [2013](http://www.sciencedirect.com/science/article/pii/S0167947313001552); Schrodle & Held, 2011a, 2011b), with comparable results to MCMC.
+
+### Libraries
+
+You need to install INLA, if you're using R >=4.1, you install via
+
+`install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/testing"), dep=TRUE)`
+
+```{r libraries, results='hide', message=FALSE, warning=FALSE}
+#library(rgdal)
+library(spdep)
+library(INLA)
+library(tigris)
+library(tidycensus)
+library(tidyverse)
+
+```
+### Data
+I have the data on my github site under the [nhgis_vs](https://github.com/coreysparks/data/tree/master/nhgis_vs) page. These are data from the [NHGIS](https://www.nhgis.org/) project by [IPUMS](https://www.ipums.org/) who started providing birth and death data from the US Vital statistics program. 
+
+The data we will use here are infant mortality rates in US counties between 2000 and 2007. 
+
+```{r load data, message=FALSE, warning=FALSE}
+files<-list.files("~/OneDrive - University of Texas at San Antonio//classes/dem7263/class21_7263/data/nhgis0022_csv/nhgis0022_csv/", pattern = "*.csv", full.names = T)
+# vital<-lapply(files, 
+#               read.csv, 
+#               header=T)
+# 
+
+#library(plyr)
+#join the data frames for each year together
+# df <- ldply(vital,
+#             data.frame)
+
+df<-read_csv(files[16])
+df$cofips<-paste(substr(df$GISJOIN, 2,3),
+                 substr(df$GISJOIN, 5,7),
+                 sep="")
+
+df<-df%>%
+ # filter(YEAR %in%2000:2007)%>%
+  mutate(rate=as.numeric(AGWJ001) )%>%
+  arrange(cofips)%>%
+  select(cofips,rate)
+
+head(df)
+
+```
+
+
+## Get census data using tidycensus
+Here I get data from the 2000 decennial census summary file 3
+```{r}
+#v00<-load_variables(year=2000, dataset = "sf3", cache = T)
+cov_dat<-get_decennial(geography = "county", year = 2000, sumfile = "sf3",
+                       summary_var = "P001001",
+                       variables = c("P007003", "P007004","P007010","P053001", "P089001", "P089002" ),
+                      output = "wide")
+
+cov_dat<-cov_dat%>%
+  mutate(cofips=GEOID,
+         pwhite=P007003/summary_value,
+         pblack=P007004/summary_value,
+         phisp=P007010/summary_value,
+         medhhinc=as.numeric(scale(P053001)),
+         ppov=P089002/P089001)
+
+
+final.dat<-merge(df, cov_dat, by="cofips")
+head(final.dat)
+
+```
+
+
+# Create expected numbers of cases
+In count data models, and spatial epidemiology, we have to express the raw counts of events relative to some expected value, or population offset, see [this Rpub](http://rpubs.com/corey_sparks/361894) for a reminder.
+
+```{r}
+#ratesyr<-aggregate(rate~year, final.dat,mean) #in this case, we will standardize to the average IMR for the period
+#ratesyr$E<-ratesyr$rate
+#final.dat<-merge(final.dat, ratesyr[,-2], by="year")
+#rates<-aggregate(rate~1, final.dat, mean)
+final.dat$E_d<-mean(final.dat$rate)
+
+final.dat<-final.dat[order(final.dat$cofips),]
+final.dat$id<-1:dim(final.dat)[1]
+
+head(final.dat)
+options(scipen=999)
+```
+
+Next we make the spatial information, we get the polygons from census directly using `counties` from the `tigris` package. We drop counties not in the contiguous 48 US states. 
+
+```{r, results='hide'}
+library(tigris)
+us_co<-counties( cb = T)
+us_co<-us_co%>%
+  subset(!STATEFP%in%c("02", "15", "60", "66", "69", "72", "78"))
+
+```
+
+## Construction of spatial relationships:
+
+```{r}
+#In INLA, we don't need FIPS codes, we need a simple numeric index for our counties
+us_co$struct<-1:dim(us_co)[1]  
+nbs<-knearneigh(st_centroid(us_co), k = 5, longlat = T) #k=5 nearest neighbors
+nbs<-knn2nb(nbs, row.names = us_co$struct, sym = T) #force symmetry!!
+mat <- nb2mat(nbs, style="B",zero.policy=TRUE)
+colnames(mat) <- rownames(mat) 
+mat <- as.matrix(mat[1:dim(mat)[1], 1:dim(mat)[1]])
+
+
+nb2INLA("cl_graph",nbs)
+am_adj <-paste(getwd(),"/cl_graph",sep="")
+H<-inla.read.graph(filename="cl_graph")
+```
+
+### Plot geographies
+
+```{r}
+library(sf)
+us_co<-st_as_sf(us_co)
+us_co$cofips<-paste(us_co$STATEFP, us_co$COUNTYFP, sep="")
+us_co%>%
+  ggplot()+
+  geom_sf()+
+  coord_sf(crs = 2163)
+```
+
+```{r}
+final.dat<-merge( us_co,final.dat, by="cofips")
+final.dat<-final.dat[order(final.dat$cofips),]
+```
+
+# Model setup
+- We have a count outcome (deaths and births), in counties over time, and a set of time-constant covariates.
+- We have several options in the GLM framework with which to model these data, for example:
+
+- Binomial - $$y_{ij} \sim Bin(\pi_{ij}) \text{:  } logit(\pi_{ij} ) = \beta_{0}+ x'\beta_k $$
+
+- Poisson - $$y_{ij} \sim Pois(\lambda_{ij} E_{ij}) \text{:  } log(\lambda_{ij} ) = log(E_{ij}) + \beta_{0}+ x'\beta_k $$
+
+- Negative Binomial - $$y_{ij} \sim \text{Neg Bin} (\mu_{ij}, \alpha, E_{ij}) \text{:  } log(\mu_{ij} ) = log(E_{ij}) + \beta_{0}+ x'\beta_k $$
+ 
+- In addition to various zero-inflated versions of these data.
+
+```{r}
+ggplot(data = final.dat)+geom_histogram(aes(x =log(rate) ,
+                                            y=0.5*..density..))+
+  #facet_wrap(~year)+
+  ggtitle(label = "Distribution of Infant Mortality Rate by Year",
+          subtitle = "US Counties, 2000")
+
+ggplot(data = final.dat)+geom_histogram(aes(x =log(rate/E_d) ,
+                                            y=0.5*..density..))+
+  #facet_wrap(~year)+
+  ggtitle(label = "Distribution of Infant Mortality Relative Risk by Year", 
+          subtitle = "US Counties, 2000")
+
+```
+
+```{r, results='hide'}
+sts<- states(cb=T)%>%
+  st_transform(crs= 2163)%>%
+  st_boundary()%>%
+  subset(!STATEFP%in%c("02", "15", "60", "66", "69", "72", "78"))
+```
+
+
+```{r}
+final.dat%>%
+  #filter(year%in%c(2000))%>%
+  mutate(qrr=cut(I(rate/E_d), 
+                 breaks = quantile(I(rate/E_d),
+                                   p=seq(0,1,length.out = 5)),
+                 include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes(fill=qrr, color=NA))+
+  geom_sf(data=sts, color="black")+
+  scale_colour_brewer(palette = "RdBu" )+
+  scale_fill_brewer(palette = "RdBu", na.value="grey")+
+  guides(fill=guide_legend(title="Relative Risk Quartile"))+
+  ggtitle(label="Relative Risk Quartile - IMR Raw data, 2000")+
+  coord_sf(crs = 2163)
+
+#ggsave(filename = "C:/Users/ozd504/Documents/GitHub/talks/imr_raw2000.png", dpi = "print", width = 10, height = 8)
+```
+
+
+We can fit these  model using the Bayesian framework with INLA. 
+
+First, we consider the basic GLM for the mortality outcome, with out any hierarchical structure. We can write this model as a Negative Binomial model, for instance as:
+
+$$\text{Deaths_ij} = \text{log(E_d)} + X' \beta$$
+
+INLA will use vague Normal priors for the $\beta$'s, and we have not other parameters in the model to specify priors for. INLA does not require you to specify all priors, as all parameters have a default prior specification.
+
+```{r}
+#Model specification:
+f1<-rate~scale(pblack)+scale(phisp)+scale(ppov)
+
+#Model fit
+mod1<-inla(formula = f1,data = final.dat, #linear predictor - fixed effects
+           family = "poisson", E = E_d,  #marginal distribution for the outcome, expected count
+           control.compute = list(waic=T), # compute DIC or not?
+           control.predictor = list(link=1), #estimate predicted values & their marginals or not?
+           num.threads = 3, 
+               verbose = F)
+#model summary
+summary(mod1)
+
+```
+
+
+### Basic county level random intercept model
+Now we add basic nesting of rates within counties, with a random intercept term for each county. This would allow there to be heterogeneity in the mortality rate for each county, over and above each county's observed characteristics. 
+
+This model would be:
+
+$$\text{Deaths}_{ij} = \text{log(E_d)} + X' \beta + u_j$$
+$$u_j \sim  \text{Normal} (0 , \tau_u)$$
+
+where $\tau_u$ here is the precision, not the variance and **precision = 1/variance.** 
+
+INLA puts a log-gamma prior on the the precision by default.
+
+```{r}
+f2<-rate~scale(pblack)+scale(phisp)+scale(ppov)+ #fixed effects
+  f(struct, model = "iid")  #random effects
+
+mod2<-inla(formula = f2,
+           data = final.dat,
+           family = "poisson",
+           E = E_d, 
+           control.compute = list(waic=T), 
+           control.predictor = list(link=1),
+           num.threads = 3, 
+               verbose = F)
+
+#total model summary
+summary(mod2)
+
+```
+
+#### Marginal Distributions of hyperparameters
+We can plot the posterior marginal of the hyperparameter in this model, in this case $\sigma_u = 1/\tau_u$
+
+```{r}
+m2<- inla.tmarginal(
+        function(x) (1/x), #invert the precision to be on variance scale
+        mod2$marginals.hyperpar$`Precision for struct`)
+#95% credible interval for the variance
+inla.hpdmarginal(.95, marginal=m2)
+
+plot(m2,
+     type="l",
+     main=c("Posterior distibution for between county variance", "- IID model -"), 
+     xlim=c(0, 6))
+
+```
+
+
+
+```{r}
+final.dat$fitted_m2<-mod2$summary.fitted.values$mean
+
+final.dat%>%
+#  filter(year%in%c(2000))%>%
+  mutate(qrr=cut(fitted_m2,
+                 breaks = quantile(fitted_m2, p=seq(0,1,length.out = 6)),
+                 include.lowest = T))%>%
+  ggplot()+geom_sf(aes(fill=qrr))+
+  scale_colour_brewer(palette = "RdBu" )+
+  scale_fill_brewer(palette = "RdBu", na.value="grey")+
+  guides(fill=guide_legend(title="Relative Risk Quartile"))+
+  ggtitle(label="Relative Risk Quartile - IID Model, 2000")+
+  coord_sf(crs = 2163)
+  
+# library(mapview)
+# 
+# map1<-final.dat%>%
+#   filter(year%in%c(2007))%>%
+#   mutate(qrr=cut(fitted_m2, breaks = quantile(fitted_m2, p=seq(0,1,length.out = 8))))
+# clrs <- colorRampPalette(brewer.pal(8, "RdBu"))
+# mapView(as(map1, "Spatial"), zcol="qrr", legend=T, col.regions=clrs)
+```
+
+### BYM Model
+Model with spatial correlation - Besag, York, and Mollie (1991) model 
+$$\text{Deaths_ij} = \text{log(E_d)} + X' \beta + u_j + v_j $$
+Which has two random effects, one an IID random effect and the second a spatially correlated random effect, specified as a  conditionally auto-regressive prior for the $v_j$'s. This is the Besag model:
+
+$$v_j|v_{\neq j},\sim\text{Normal}(\frac{1}{n_i}\sum_{i\sim j}v_j,\frac{1}{n_i\tau})$$
+and $u_j$ is an IID normal random effect, $\gamma_t$ is also given an IID Normal random effect specification, and there are now three hyperparameters, $\tau_u$ and $\tau_v$ and $\tau_{\gamma}$ and each are given log-gamma priors.
+
+For the BYM model we must specify the spatial connectivity matrix in the random effect.
+
+```{r}
+
+f3<-rate~scale(pblack)+scale(phisp)+scale(ppov)+
+  f(struct, model = "bym",scale.model = T, constr = T, graph = H)
+
+mod3<-inla(formula = f3,data = final.dat,
+           family = "poisson",
+           E = E_d, 
+           control.compute = list(waic=T,return.marginals.predictor=TRUE), 
+           control.predictor = list(link=1), 
+           num.threads = 3, 
+               verbose = F)
+
+#total model summary
+summary(mod3)
+```
+
+Compare model fits
+
+```{r}
+mod1$waic$waic
+mod2$waic$waic
+
+mod3$waic$waic
+
+
+```
+Looks like the spatial is better in this case. 
+
+#### Hyper parameter distributions
+
+Green line is spatial variation, black line is nonspatial variation
+```{r}
+
+m3a<- inla.tmarginal(
+        function(x) (1/x),
+        mod3$marginals.hyperpar$`Precision for struct (iid component)`)
+m3b<- inla.tmarginal(
+        function(x) (1/x),
+        mod3$marginals.hyperpar$`Precision for struct (spatial component)`)
+
+plot(m3a, type="l",
+     main=c("Posterior distibution for between county variance", "- BYM model -"),
+     xlim=c(0, 6))
+#lines(m3b, col="red")
+lines(m3b, col="green")
+```
+
+HPD interval for variances
+```{r}
+inla.hpdmarginal(.95,m3a)
+inla.hpdmarginal(.95,m3b)
+
+
+```
+
+
+## Spatial mapping of the fitted values
+
+```{r}
+final.dat$fitted_m3<-mod3$summary.fitted.values$mean
+
+final.dat%>%
+ # filter(year%in%c(2000))%>%
+  mutate(qrr=cut(fitted_m3,
+                 breaks = quantile(fitted_m3, p=seq(0,1,length.out = 6)),
+                 include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes(fill=qrr))+
+  scale_colour_brewer(palette = "RdBu" )+
+  scale_fill_brewer(palette = "RdBu", na.value="grey")+
+  guides(fill=guide_legend(title="Relative Risk Quartile"))+
+  ggtitle(label="Relative Risk Quartile - BYM Model, 2000")+
+  coord_sf(crs = 2163)
+  
+
+#library(mapview)
+
+#map1<-final.dat%>%
+#  filter(year%in%c(2007))%>%
+#  mutate(qrr=cut(fitted_m3, breaks = quantile(fitted_m3, p=seq(0,1,length.out = 8))))
+#clrs <- colorRampPalette(brewer.pal(8, "RdBu"))
+#mapView(as(map1, "Spatial"), zcol="qrr", legend=T, col.regions=clrs)
+```
+
+## Map of spatial random effects
+It is common to map the random effects from the BYM model to look for spatial trends, in this case, there are not strong spatial signals:
+
+```{r}
+us_co$sp_re<-mod3$summary.random$struct$mean[3109:6216]
+us_co%>%
+  mutate(qse=cut(sp_re, 
+                 breaks = quantile(sp_re, p=seq(0,1,length.out = 6)),
+                 include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes(fill=qse, color=NA))+
+  geom_sf(data=sts)+
+  scale_colour_brewer(palette = "RdBu" )+
+  scale_fill_brewer(palette = "RdBu", na.value="grey")+
+  guides(fill=guide_legend(title="Spatial Excess Risk"))+
+  ggtitle(label="Spatial Random Effect - BYM Model")+
+  coord_sf(crs = 2163)
+
+```
+
+
+## Exceedence probabilities
+In Bayesian spatial models that are centered on an epidemiological type of outcome, it is common to examine the data for spatial clustering. One way to do this is to examine the clustering in the relative risk from one of these GLMM models. For instance if $\theta$ is the relative risk $$\theta = exp(\beta_0 + \beta_1*x_1 + u_j)$$ from one of our Negative binomial models above. We can use the posterior marginals of the relative risk to ask $\theta \gt \theta^*$ where $\theta^*$ is a specific level of excess risk, say 50% extra or $\theta > 1.5$. If the density, or $\text{Pr}(\theta \gt \theta^*)$ is high, then there is evidence that the excess risk is not only high, but **significantly** high. 
+
+To get the exceedence probabilities from one of our models, we can use the `inla.pmarginal()` function to ask if $\text{Pr}(\theta \gt \theta^*)$
+
+```{r}
+thetastar<-1.5#theta*
+inlaprob<- unlist(lapply(mod3$marginals.fitted.values, function(X){
+   1-inla.pmarginal(thetastar, X)
+}))
+hist(inlaprob)
+
+```
+
+So, we see lots of occasions where the exceedence probability is greater than .9. We can visualize these in a map.
+
+```{r}
+final.dat$exceedprob<-inlaprob
+
+final.dat%>%
+ # filter(year%in%c(2000))%>%
+  mutate(qrr=cut(exceedprob,
+                 breaks = c(0, .5, .9, .95, .99, 1),
+                 include.lowest = T))%>%
+  ggplot()+
+  geom_sf(aes(fill=qrr, color=NA))+
+  geom_sf(data=sts)+
+  scale_colour_brewer(palette = "Blues" )+
+  scale_fill_brewer(palette = "Blues", na.value="grey")+
+  guides(fill=guide_legend(title=""))+
+  ggtitle(label=expression(paste("Exceedence Probability Relative Risk ","Pr( ",theta," >1.25"," )  - 2000") ))+
+  coord_sf(crs = 2163)
+  
+#map1<-final.dat%>%
+ # filter(year%in%c(2007))%>%
+#  mutate(qrr=cut(exceedprob, breaks = c(0, .5, .9, .95, .99, 1), include.lowest = T))
+  
+#clrs <- colorRampPalette(brewer.pal(6, "Blues"))
+#mapView(as(map1, "Spatial"), zcol="qrr", legend=T, col.regions=clrs, map.types="OpenStreetMap")
+
+```
+
+Which shows several areas where risk the mortality rate is higher than the national rate.
+
+
+## Alternative priors
+
+To see available priors you can do:
+```{r}
+names(inla.models()$prior)
+```
+
+
+To see the default priors for a particular model do:
+
+```{r}
+inla.models()$latent$bym$hyper$theta1$name
+inla.models()$latent$bym$hyper$theta1$prior
+inla.models()$latent$bym$hyper$theta1$param
+
+inla.models()$latent$bym$hyper$theta2$name
+inla.models()$latent$bym$hyper$theta2$prior
+inla.models()$latent$bym$hyper$theta2$param
+
+
+```
+
+So the default prior for the unstructured and spatial random effects are a log-gamma distribution, with parameters 1, and .0005. If we want to change this to other values, we can do so like this. Here I specify a truncated gaussian with a mean of .2, and st 
+
+```{r}
+
+inla.models()$prior$logtgaussian
+
+prec.prior <- list(prec.unstruct = list(prior = "logtgaussian", param = c(0.2, 1)),
+                   prec.spatial = list(prior = "logtgaussian", param = c(0.2, 1)))
+
+
+f4<-rate~scale(pblack)+scale(phisp)+scale(ppov)+
+  f(struct, model = "bym",scale.model = T, constr = T, graph = H,
+    hyper = prec.prior)
+
+mod4<-inla(formula = f4,data = final.dat,
+           family = "poisson",
+           E = E_d, 
+           control.compute = list(waic=T,return.marginals.predictor=TRUE), 
+           control.predictor = list(link=1), 
+           num.threads = 3, 
+               verbose = F)
+
+summary(mod4)
+mod4$waic$waic
+mod3$waic$waic
+mod2$waic$waic
+
+```
+
+```{r}
+m4a<- inla.tmarginal(
+        function(x) (1/x),
+        mod4$marginals.hyperpar$`Precision for struct (iid component)`)
+m4b<- inla.tmarginal(
+        function(x) (1/x),
+        mod4$marginals.hyperpar$`Precision for struct (spatial component)`)
+
+plot(m3a, type="l",
+     main=c("Posterior distibution for between county variance", "- BYM model -"),
+     xlim=c(0, 6))
+#lines(m3b, col="red")
+lines(m3b, col="green")
+lines(m4a, col="black", lty=2)# modified prior for IID
+lines(m4b, col="green", lty=2)# modified prior for spatial
+
+
+```
+
+
+## References
+Besag, J., York, J., & Mollie, a. (1991). Bayesian image-restoration, with 2 applications in spatial statistics. Annals of the Institute of Statistical Mathematics, 43(1), 1-20. https://doi.org/10.1007/BF00116466
