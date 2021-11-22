@@ -245,17 +245,18 @@ The basic model summary presents the quantiles for each regression parameter, an
 
 ```{r}
 
-#cl<- makeCluster(parallel::detectCores()) #optional but faster
+cl<- makeCluster(parallel::detectCores()-3) #optional but faster
 
 
 fit<-gwr(scale(Age.Adjusted.Rate)~metro_cut+scale(ppov)+scale(pblack)+scale(phisp)+scale(gini)+scale(unemp)+scale(pfemhh)+scale(medhouseval)+scale(popdensity),
         se.fit = T,
         hatmatrix = T,
         bandwidth = gwr.b.f,
-       # cl = cl, #optional but faster
+        cl = cl, #optional but faster
         data=usco)
 
 fit
+stopCluster(cl)
 ```
 
 Examining the basic output, we see a wide range of values for all the regression effects. For instance, the `ppov` variables has a range of -0.56 to 0.69, meaning that in some counties the effect of poverty decreases mortality, while in others it increases. In fact, all regression effects show this negative to positive range in this analysis, suggesting that there is a lot of variation at the local level in the regression model. 
@@ -343,7 +344,7 @@ gwr.out%>%
 
 ```
 
-# GWR Modelig - Adaptive Kernel Model 
+# GWR Modeling - Adaptive Kernel Model 
 
 In this data example, and depending on where in the country a county is, the relative distances between counties can vary substantially. For example, in the eastern US, counties are relatively closer together than they are in the western US. This makes a good case for the use of the adaptive kernel method described earlier. 
 
