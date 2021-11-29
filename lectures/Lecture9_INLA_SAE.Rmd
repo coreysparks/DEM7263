@@ -1,0 +1,335 @@
+---
+title: "DEM 7263 - Small Area Estimation"
+author: "Corey S. Sparks, Ph.D."
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+   html_document:
+    df_print: paged
+    fig_height: 7
+    fig_width: 7
+    toc: yes
+    toc_float: yes
+    code_download: true
+--- 
+   
+## Small area estimation using INLA
+
+
+
+
+## BRFSS DATA
+```{r}
+load(url("https://github.com/coreysparks/data/blob/master/brfss_2017.Rdata?raw=true"))
+set.seed(1115)
+#samps<-sample(1:nrow(brfss_17), size = 40000, replace=F)
+#brfss_17<-brfss_17[samps,]
+#The names in the data are very ugly, so I make them less ugly
+nams<-names(brfss_17)
+#we see some names are lower case, some are upper and some have a little _ in the first position. This is a nightmare.
+newnames<-gsub(pattern = "_",replacement =  "",x =  nams)
+names(brfss_17)<-tolower(newnames)
+
+```
+
+### Recode variables
+
+```{r BRFSS data}
+library(car)
+library(dplyr)
+
+###BRFSS DATA
+
+#nice MSA name
+brfss_17$mmsa_name<-substr(brfss_17$mmsaname, 1,nchar(brfss_17$mmsaname)-31)
+
+#sex
+brfss_17$male<-ifelse(brfss_17$sex==1, 1, 0)
+
+#BMI
+brfss_17$bmi<-ifelse(is.na(brfss_17$bmi5)==T, NA, brfss_17$bmi5/100)
+
+#race/ethnicity
+brfss_17$black<-Recode(brfss_17$racegr3, recodes="2=1; 9=NA; else=0")
+brfss_17$white<-Recode(brfss_17$racegr3, recodes="1=1; 9=NA; else=0")
+brfss_17$other<-Recode(brfss_17$racegr3, recodes="3:4=1; 9=NA; else=0")
+brfss_17$hispanic<-Recode(brfss_17$racegr3, recodes="5=1; 9=NA; else=0")
+
+brfss_17$race_eth<-Recode(brfss_17$racegr3, 
+recodes="1='nhwhite'; 2='nh black'; 3='nh other';4='nh multirace'; 5='hispanic'; else=NA",
+as.factor = T)
+brfss_17$race_eth<-relevel(brfss_17$race_eth, ref = "nhwhite")
+
+
+#education level
+brfss_17$educ<-Recode(brfss_17$educa,
+recodes="1:2='0Prim'; 3='1somehs'; 4='2hsgrad'; 5='3somecol'; 6='4colgrad';9=NA",
+as.factor=T)
+brfss_17$educ<-relevel(brfss_17$educ, ref='2hsgrad')
+
+
+
+#Age cut into intervals
+brfss_17$agec<-cut(brfss_17$age80, breaks=seq(20,80,10))
+
+#BMI, in the brfss_17a the bmi variable has 2 implied decimal places,
+#so we must divide by 100 to get real bmi's
+
+brfss_17$bmi<-brfss_17$bmi5/100
+
+brfss_17$obese<-ifelse(is.na(brfss_17$bmi)==T, NA, 
+                       ifelse(brfss_17$bmi>30,1,0))
+
+brfss_17$owtob<-ifelse(is.na(brfss_17$bmi)==T, NA, 
+                       ifelse(brfss_17$bmi>25,1,0))
+
+```
+
+
+```{r}
+
+brfss_17<-brfss_17%>%
+  select( mmsa, ststr, agec, educ, black, hispanic, other,owtob,  male, mmsawt, mmsa_name )%>%
+  filter(complete.cases(.))
+
+```
+
+
+```{r, results='hide'}
+
+library(tigris)
+library(sf)
+options(tigris_class="sf")
+msa<-core_based_statistical_areas(cb=T)
+msa<-msa%>%
+  st_transform(crs = 2163)%>%
+  filter(grepl(x = NAME, pattern="TX"))
+
+msa$struct <- 1:dim(msa)[1]
+
+library(spdep)
+nbs<-knearneigh(st_centroid(msa), k = 4, longlat = F) #k=5 nearest neighbors
+nbs<-knn2nb(nbs, row.names = msa$struct, sym = T) #force symmetry!!
+mat <- nb2mat(nbs, style="B",zero.policy=TRUE)
+colnames(mat) <- rownames(mat) 
+mat <- as.matrix(mat[1:dim(mat)[1], 1:dim(mat)[1]])
+
+library(INLA)
+nb2INLA("br_graph",nbs)
+am_adj <-paste(getwd(),"/br_graph",sep="")
+H<-inla.read.graph(filename="br_graph")
+
+
+sts<-states(cb = T)
+sts<-sts%>%
+  st_transform(crs = 2163)%>%
+  filter(STATEFP%in%c(48))
+
+
+```
+
+
+### Small area estimation
+This example will illustrate a way to combine individual survey data with aggregate data on MSAs to produce a MSA level estimate of *basically* any health indicator measured using the BRFSS. The framework I use below takes observed individual level survey responses from the BRFSS and merges these to MSA level variables from the ACS. This allows me to estimate the overall regression model for MSA-level prevalence, controlling for MSA level variables. Then, I can use this equation for prediction for MSAs where I have not observed survey respondents, but for which I have observed the MSA level characteristics. 
+
+This corresponds to a  multilevel logistic model with a higher level variables as predictors and can be written:
+$$ln \left( \frac {\pi_{ij}}{1-\pi{ij}} \right ) = \beta_{0j} +\sum {\beta_k x_{ik}}+\sum {\gamma_j z_j} $$
+
+```{r}
+msa$GEOID<-as.numeric(msa$GEOID)
+merged<-inner_join(brfss_17, msa,by =c("mmsa" = "GEOID"))
+
+
+```
+
+```{r}
+
+
+fit.mix.bin<-inla(owtob ~ male + black + hispanic + other +
+                    f(struct, model="iid",prior="loggamma", param=c(.1, .1))+
+                    f(agec, model = "iid",prior="loggamma", param=c(.1, .1)), 
+              family="binomial", 
+              data=merged, 
+              Ntrials=1)
+
+summary(fit.mix.bin)
+```
+
+```{r}
+#odds ratios
+exp(fit.mix.bin$summary.fixed[, c(1,3,4,5)])
+
+plot(inla.tmarginal(fun=function(x) 1/x, marginal = fit.mix.bin$marginals.hyperpar$`Precision for struct`), type="l",
+     main="Marginal distribution of between MSA variance")
+
+b1 <- inla.emarginal(exp, fit.mix.bin$marginals.fixed[[2]])
+b1 #Posterior mean
+
+b1ci <-inla.qmarginal(c(.025, .975), 
+                      inla.tmarginal(exp, fit.mix.bin$marginals.fixed[[2]]))
+b1ci
+
+```
+
+
+## Post-stratification
+
+```{r}
+library(ipumsr)
+ddi<-read_ipums_ddi("~/OneDrive - University of Texas at San Antonio//classes/dem7283/class_21_7283/data/usa_00077.xml")
+census<-read_ipums_micro(ddi)
+
+names(census)<-tolower(names(census))
+census<-zap_labels(census)
+
+census<-census%>%
+  filter(age>20, statefip =="48")
+
+census$hisp <- Recode(census$hispan, recodes = "9=NA; 1:4='Hispanic'; 0='NotHispanic'")
+
+census$race_rec <- Recode(census$race, recodes = "1='White'; 2='Black'; 3='Other/Multiple'; 4:6='Asian'; 7:9='Other/Multiple'", as.factor = T)
+
+census$race_eth <- interaction(census$hisp, census$race_rec, sep = " ")
+
+census$race_eth <- as.factor(ifelse(substr(as.character(census$race_eth),1,8) == "Hispanic", "Hispanic", as.character(census$race_eth)))
+
+census$race_eth <- relevel(census$race_eth, ref = "NotHispanic White")
+
+census$black<-ifelse(census$race_eth=="NotHispanic Black",1,0)
+
+census$other<-ifelse(census$race_eth%in%c("NotHispanic Asian", "NotHispanic Other/Multiple") ,1,0)
+
+census$hispanic<-ifelse(census$race_eth=="Hispanic",1,0)
+
+census$male <- ifelse(census$sex == 1,1,0)
+census$agec<-cut(census$age, breaks = seq(20, 80, 10))
+
+
+```
+
+Now I make the populations by the same charactersistics that went into the GLMM
+
+```{r}
+
+msatotals<-census%>%
+  mutate(mmsa  = met2013)%>%
+  group_by(mmsa, agec, male, black, hispanic, other)%>%
+  summarise(popn = sum (perwt))
+
+msatotals$struct <- msa$struct[match(msatotals$mmsa, msa$GEOID)]
+msatotals$owtob <- NA
+head(msatotals)
+```
+
+The `perwt` column is the estimate of the number of people in each place by the characteristics provided.
+
+Now we use these data to get fitted values for each row. To do this, we merge them at the end of the brfss data, and run the model. The model will estimate the missing values for the overweight variable as it fits. 
+
+```{r}
+
+mdat<-left_join(msa, msatotals, by = c("GEOID" = "mmsa"))
+
+merged_new<-rbind(merged[, c("mmsa","owtob", "agec", "black", "hispanic", "other", "male", "struct")], 
+   msatotals[, c("mmsa","owtob", "agec", "black", "hispanic", "other", "male", "struct")] )
+  
+```
+
+```{r}
+fit.pred<-inla(owtob ~  male + black + hispanic + other + 
+                    f(struct, model="iid",prior="loggamma", param=c(.1, .1))+
+                    f(agec, model = "iid",prior="loggamma", param=c(.1, .1)), 
+              family="binomial", 
+              data=merged_new, 
+              control.compute = list(waic=T,return.marginals.predictor=TRUE), 
+              control.predictor = list(link=1),
+              Ntrials=1)
+
+summary(fit.pred)
+
+```
+
+```{r}
+msatotals_est<-cbind(msatotals, fit.pred$summary.fitted.values[is.na(merged_new$owtob)==T,])
+
+msatotals_est$est_lci<-msatotals_est$`0.025quant`
+msatotals_est$est_uci<-msatotals_est$`0.975quant`
+msatotals_est$ptest<-msatotals_est$mean
+
+head(msatotals_est)
+```
+
+Now, to do **_post-stratification_** estimates, we need to calculate:
+
+$$\pi^{pred}_{msa_j} = \frac{\sum_j N_l \theta_l}{\sum_l N_l}$$
+Where $\theta$ is the probability of being obese in each of the $l$ strata (groups of people), which we have as the `p` estimate from above. The $N_l$ estiamtes are the estimated counts of the population by the age, sex, and race characteristics noted above. Now we make the estimates
+
+```{r}
+
+msatotals_est$est<-msatotals_est$ptest*msatotals_est$popn
+msatotals_est$lest<-msatotals_est$est_lci*msatotals_est$popn
+msatotals_est$uest<-msatotals_est$est_uci*msatotals_est$popn
+msatotals_est$sd  <- msatotals_est$sd
+
+msarates<-msatotals_est%>%
+  group_by(mmsa)%>%
+  summarise(ob_rate_ps = sum(est)/sum(popn),
+            lowerrate=sum(lest)/sum(popn),
+            upperrate=sum(uest)/sum(popn))
+
+
+
+head(msarates)
+```
+
+
+```{r}
+#San Antonio
+msarates[msarates$mmsa=="41700",]
+
+```
+
+Not bad, based on other [estimates](https://www.cdc.gov/nccdphp/dch/programs/communitiesputtingpreventiontowork/communities/profiles/obesity-tx_sanantonio.htm) by the CDC
+
+
+Here is the rest of Texas
+```{r}
+msarates$mmsa_c<-as.numeric(msarates$mmsa)
+
+ob_msa<-left_join(msa, msarates, by=c("GEOID"="mmsa_c"))
+library(ggplot2)
+ob_msa%>%
+  ggplot()+
+  geom_sf(aes(fill=ob_rate_ps))+
+  scale_fill_viridis_c()
+
+```
+
+```{r}
+library(srvyr)
+options(survey.lonely.psu = "adjust")
+
+
+brfss.est<-brfss_17%>%
+  filter(grepl(x = mmsa_name, pattern="TX"))%>%
+  as_survey_design(strata =ststr,
+                   weights = mmsawt, 
+                   nest=F)%>%
+  group_by(mmsa)%>%
+  summarize(surv_est = survey_mean(owtob), 
+            nobs = n())
+
+brfss.est$lcl <- brfss.est$surv_est - 1.96*brfss.est$surv_est_se
+brfss.est$ucl <- brfss.est$surv_est + 1.96*brfss.est$surv_est_se
+```
+
+
+```{r}
+m_est <- left_join(msarates, brfss.est, by=c("mmsa_c"= "mmsa"))
+m_est
+
+plot(m_est$ob_rate_ps, m_est$surv_est)
+plot(y=m_est$ob_rate_ps - m_est$surv_est,x= m_est$nobs)
+
+#plot(m_est$ucl-m_est$lcl, m_est$upperrate-m_est$lowerrate)
+
+```
+
